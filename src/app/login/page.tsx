@@ -536,7 +536,7 @@ export default function LoginPage() {
                     {email}
                   </strong>
                   <br />
-                  으로 전송된 6자리 코드를 입력하세요
+                  으로 전송된 인증번호를 입력하세요
                 </p>
               </div>
 
@@ -544,10 +544,10 @@ export default function LoginPage() {
                 id="code"
                 type="text"
                 className="input-field"
-                placeholder="인증번호 6자리"
+                placeholder="인증번호 입력"
                 value={code}
-                onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
-                maxLength={6}
+                onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 8))}
+                maxLength={8}
                 required
                 style={{
                   marginBottom: "20px",
@@ -561,10 +561,10 @@ export default function LoginPage() {
               <button
                 type="submit"
                 className="btn-primary"
-                disabled={isLoading || code.length !== 6}
+                disabled={isLoading || code.length < 6}
                 style={{
                   width: "100%",
-                  opacity: isLoading || code.length !== 6 ? 0.6 : 1,
+                  opacity: isLoading || code.length < 6 ? 0.6 : 1,
                 }}
               >
                 {isLoading ? "확인 중..." : "인증 완료"}
