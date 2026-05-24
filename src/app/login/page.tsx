@@ -74,11 +74,27 @@ export default function LoginPage() {
     e.preventDefault();
     setIsLoading(true);
     try {
-      const { data, error } = await supabase.auth.verifyOtp({
+      // 1순위: email 타입으로 검증 시도
+      let { data, error } = await supabase.auth.verifyOtp({
         email,
         token: code,
         type: "email",
       });
+
+      // 2순위: email 타입 실패 시, signup 타입으로 재시도 (신규 가입자의 경우)
+      if (error && error.message.includes("Token has expired or is invalid")) {
+        const res = await supabase.auth.verifyOtp({ email, token: code, type: "signup" });
+        if (res.error) {
+          // 3순위: magiclink 타입으로 재시도 (기존 가입자의 경우)
+          const res2 = await supabase.auth.verifyOtp({ email, token: code, type: "magiclink" });
+          if (res2.error) throw res2.error;
+          data = res2.data;
+          error = null;
+        } else {
+          data = res.data;
+          error = null;
+        }
+      }
 
       if (error) throw error;
 
