@@ -1,0 +1,13 @@
+0 verbose cli /usr/local/bin/node /usr/local/bin/npm
+1 info using npm@11.9.0
+2 info using node@v24.14.0
+3 silly config load:file:/usr/local/lib/node_modules/npm/npmrc
+4 silly config load:file:/Users/macbook/Desktop/SoloProject/Thingsome/.npmrc
+5 silly config load:file:/Users/macbook/.npmrc
+6 silly config load:file:/usr/local/etc/npmrc
+7 verbose title npm run dev -p 3000
+8 verbose argv "run" "dev" "--" "-p" "3000"
+9 verbose logfile logs-max:10 dir:/Users/macbook/Desktop/SoloProject/Thingsome/.npm-cache/_logs/2026-05-19T04_47_36_353Z-
+10 verbose logfile /Users/macbook/Desktop/SoloProject/Thingsome/.npm-cache/_logs/2026-05-19T04_47_36_353Z-debug-0.log
+11 silly logfile done cleaning log files
+12 http fetch GET 200 https://registry.npmjs.org/npm 3572ms
