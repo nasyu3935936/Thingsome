@@ -45,6 +45,12 @@ export default function ChatPage() {
   // 채팅방 목록 관련 상태
   const [chatRoomsList, setChatRoomsList] = useState<any[]>([]);
   const [loadingRooms, setLoadingRooms] = useState(false);
+  const [totalUnreadCount, setTotalUnreadCount] = useState(0);
+  const [hasBroken, setHasBroken] = useState(false);
+  const [partnerBroken, setPartnerBroken] = useState(false);
+  const [showBreakToast, setShowBreakToast] = useState(false);
+  const [breakMessage, setBreakMessage] = useState<string | null>(null);
+  const [isBreaking, setIsBreaking] = useState(false);
 
   // AI 썸 측정 오버레이 상태
   const [showSsum, setShowSsum] = useState(false);
@@ -54,6 +60,125 @@ export default function ChatPage() {
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  };
+
+  const syncUnreadSummary = (rooms: any[]) => {
+    const total = rooms.reduce((sum, room) => sum + (room.unreadCount || 0), 0);
+    setTotalUnreadCount(total);
+  };
+
+  const fetchUnreadCounts = async (rooms: any[], userId: string) => {
+    if (!rooms || rooms.length === 0) return;
+    const roomIds = rooms.map((room) => room.id).filter(Boolean);
+    if (roomIds.length === 0) return;
+
+    try {
+      const { data: unreadMessages, error } = await supabase
+        .from('messages')
+        .select('room_id')
+        .neq('sender_id', userId)
+        .eq('is_read', false)
+        .in('room_id', roomIds);
+
+      if (error || !unreadMessages) {
+        return;
+      }
+
+      const unreadMap: Record<string, number> = {};
+      unreadMessages.forEach((msg: any) => {
+        if (!msg?.room_id) return;
+        unreadMap[msg.room_id] = (unreadMap[msg.room_id] || 0) + 1;
+      });
+
+      const roomsWithUnread = rooms.map((room) => ({
+        ...room,
+        unreadCount: unreadMap[room.id] || 0,
+      }));
+      setChatRoomsList(roomsWithUnread);
+      syncUnreadSummary(roomsWithUnread);
+    } catch (err) {
+      console.debug('unread count fetch failed', err);
+    }
+  };
+
+  const markRoomMessagesAsRead = async (roomId: string, userId: string) => {
+    try {
+      await fetch('/api/messages/mark_read', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ room_id: roomId, user_id: userId }),
+      });
+
+      setChatRoomsList((prev) => {
+        const updated = prev.map((room) => room.id === roomId ? { ...room, unreadCount: 0 } : room);
+        syncUnreadSummary(updated);
+        return updated;
+      });
+    } catch (err) {
+      console.debug('mark read failed', err);
+    }
+  };
+
+  const loadRoomBreakState = async (roomId: string, userId: string, otherId: string | null) => {
+    try {
+      const { data: room, error } = await supabase
+        .from('chat_rooms')
+        .select('user1_id,user2_id,broken_by_user1,broken_by_user2')
+        .eq('id', roomId)
+        .maybeSingle();
+
+      if (error || !room) return;
+
+      const currentUserBroken = room.user1_id === userId ? !!room.broken_by_user1 : !!room.broken_by_user2;
+      const currentPartnerBroken = room.user1_id === otherId ? !!room.broken_by_user1 : !!room.broken_by_user2;
+      setHasBroken(currentUserBroken);
+      setPartnerBroken(currentPartnerBroken);
+    } catch (err) {
+      console.debug('load break state failed', err);
+    }
+  };
+
+  const handleBreakHeart = async () => {
+    if (hasBroken) {
+      setShowBreakToast(true);
+      setBreakMessage('이미 하트 깨짐을 눌렀습니다.');
+      setTimeout(() => setShowBreakToast(false), 1400);
+      return;
+    }
+
+    if (!currentUser || !activeRoomId || !partnerId) return;
+    setIsBreaking(true);
+
+    try {
+      const res = await fetch('/api/chat_rooms/break', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ room_id: activeRoomId, user_id: currentUser.id }),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        throw new Error(json?.error || 'break action failed');
+      }
+
+      setHasBroken(true);
+      setPartnerBroken(!!json.partnerBroken);
+      if (json.roomDeleted) {
+        alert('썸붕! 양쪽 모두 하트를 깨뜨려 채팅방이 삭제되었습니다.');
+        window.location.href = '/chat';
+        return;
+      }
+
+      setBreakMessage(json.partnerBroken ? '상대도 하트를 깼어요. 썸붕 직전이에요!' : '하트를 깼습니다. 상대도 누르면 썸붕이 됩니다.');
+      setShowBreakToast(true);
+      setTimeout(() => setShowBreakToast(false), 2200);
+    } catch (err) {
+      console.error('break heart error', err);
+      setBreakMessage('하트 깨짐 처리를 할 수 없어요.');
+      setShowBreakToast(true);
+      setTimeout(() => setShowBreakToast(false), 2200);
+    } finally {
+      setIsBreaking(false);
+    }
   };
 
   useEffect(() => {
@@ -100,14 +225,16 @@ export default function ChatPage() {
               const partnerId = room.user1_id === user.id ? room.user2_id : room.user1_id;
               try {
                 const { data: partner } = await supabase.from('profiles').select('nickname').eq('id', partnerId).maybeSingle();
-                return { ...room, partnerNickname: partner?.nickname || '사용자', partnerId };
+                return { ...room, partnerNickname: partner?.nickname || '사용자', partnerId, unreadCount: 0 };
               } catch (e) {
-                return { ...room, partnerNickname: '사용자', partnerId };
+                return { ...room, partnerNickname: '사용자', partnerId, unreadCount: 0 };
               }
             }));
             setChatRoomsList(roomsWithPartner);
+            await fetchUnreadCounts(roomsWithPartner, user.id);
           } else {
             setChatRoomsList([]);
+            setTotalUnreadCount(0);
           }
         } catch (e) {
           console.error('fetch rooms failed', e);
@@ -120,6 +247,7 @@ export default function ChatPage() {
       
       setCurrentUser(user);
       setActiveRoomId(roomId);
+      let otherId: string | null = null;
       // 방 정보에서 상대방 ID 가져오기
       try {
         const { data: roomData, error: roomErr } = await supabase
@@ -210,6 +338,11 @@ export default function ChatPage() {
           // 기존 대화가 없으면 첫 인사말 추가 가능 (여기서는 빈 배열로 시작)
           setMessages([]);
         }
+      }
+
+      if (user) {
+        await loadRoomBreakState(roomId, user.id, otherId);
+        await markRoomMessagesAsRead(roomId, user.id);
       }
       
       // 2. 실시간 통신 (Realtime) 채널 구독
@@ -440,6 +573,11 @@ export default function ChatPage() {
       <main style={{ maxWidth: "500px", margin: "0 auto", padding: 0 }}>
         <div style={{ padding: "16px", paddingTop: "max(16px, env(safe-area-inset-top))", borderBottom: "1px solid var(--border-subtle)" }}>
           <h1 style={{ margin: 0, fontSize: 22, fontWeight: 800 }}>채팅</h1>
+          {totalUnreadCount > 0 && (
+            <div style={{ marginTop: 8, color: "var(--primary-400)", fontSize: 13, fontWeight: 600 }}>
+              읽지 않은 메시지 {totalUnreadCount}개가 있습니다
+            </div>
+          )}
         </div>
 
         {loadingRooms ? (
@@ -472,7 +610,14 @@ export default function ChatPage() {
                   {room.partnerNickname.charAt(0)}
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 4 }}>{room.partnerNickname}</div>
+                  <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 4, display: 'flex', alignItems: 'center', gap: 8 }}>
+                    {room.partnerNickname}
+                    {room.unreadCount > 0 && (
+                      <span style={{ fontSize: 11, background: 'var(--accent-500)', color: 'white', padding: '2px 8px', borderRadius: 999, fontWeight: 700 }}>
+                        {room.unreadCount}
+                      </span>
+                    )}
+                  </div>
                   <div style={{ fontSize: 13, color: "var(--text-secondary)" }}>메시지 보내기</div>
                 </div>
                 <button
@@ -571,15 +716,21 @@ export default function ChatPage() {
         </div>
         <div style={{ flex: 1 }}>
           <div style={{ fontWeight: 700, fontSize: "15px" }}>{partnerNickname}</div>
-            <div style={{ fontSize: "12px", color: partnerLiked ? "var(--accent-400)" : "var(--success)", display: "flex", alignItems: "center", gap: "6px" }}>
-              {partnerLiked ? (
-                <>
-                  <Icons.HeartFilled /> 상대가 당신을 좋아합니다
-                </>
-              ) : (
-                "온라인"
-              )}
-            </div>
+          <div style={{ fontSize: "12px", display: "flex", alignItems: "center", gap: "6px", color: partnerBroken ? "var(--error)" : partnerLiked ? "var(--accent-400)" : "var(--success)" }}>
+            {hasBroken && partnerBroken ? (
+              <>💔 썸붕! 둘 다 하트를 깨뜨렸어요</>
+            ) : partnerBroken ? (
+              <>💔 상대가 먼저 하트를 깼어요</>
+            ) : hasBroken ? (
+              <>💔 당신이 하트를 깼습니다</>
+            ) : partnerLiked && hasLiked ? (
+              <> <Icons.HeartFilled /> 서로 호감 확인 완료</>
+            ) : partnerLiked ? (
+              <> <Icons.HeartFilled /> 상대가 당신을 좋아합니다</>
+            ) : (
+              "온라인"
+            )}
+          </div>
         </div>
         {/* Profile view button */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -790,6 +941,33 @@ export default function ChatPage() {
         </div>
       )}
 
+      {/* Break Heart Toast */}
+      {showBreakToast && breakMessage && (
+        <div
+          style={{
+            position: "fixed",
+            top: "50%",
+            left: "50%",
+            transform: "translate(-50%, -50%)",
+            background: "rgba(239,68,68,0.95)",
+            padding: "20px 32px",
+            borderRadius: "var(--radius-xl)",
+            animation: "fadeIn 0.3s ease-out",
+            zIndex: 20,
+            textAlign: "center",
+            boxShadow: "0 24px 60px rgba(0,0,0,0.3)",
+            color: "white",
+          }}
+        >
+          <div style={{ display: "flex", justifyContent: "center", marginBottom: "8px", fontSize: "24px" }}>
+            💔
+          </div>
+          <div style={{ fontWeight: 700, fontSize: "16px" }}>
+            {breakMessage}
+          </div>
+        </div>
+      )}
+
       {/* Input Area */}
       <div
         style={{
@@ -854,6 +1032,32 @@ export default function ChatPage() {
                 {likeCount}
               </span>
             )}
+          </button>
+
+          {/* Break Heart Button */}
+          <button
+            type="button"
+            onClick={handleBreakHeart}
+            disabled={hasBroken || isBreaking}
+            title={hasBroken ? "이미 하트 깨짐 처리됨" : "하트 깨짐"}
+            style={{
+              width: "44px",
+              height: "44px",
+              borderRadius: "50%",
+              background: hasBroken ? "rgba(239,68,68,0.18)" : "rgba(239,68,68,0.08)",
+              border: hasBroken ? "1px solid rgba(239,68,68,0.28)" : "1px solid rgba(239,68,68,0.16)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              fontSize: "20px",
+              cursor: hasBroken ? "default" : "pointer",
+              flexShrink: 0,
+              transition: "all var(--transition-fast)",
+              color: hasBroken ? "var(--error)" : "var(--text-primary)",
+              opacity: hasBroken ? 0.8 : 1,
+            }}
+          >
+            💔
           </button>
 
           {/* Input */}
