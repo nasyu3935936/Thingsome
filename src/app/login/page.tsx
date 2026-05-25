@@ -6,10 +6,11 @@ import { createClient } from "@/utils/supabase/client";
 import { Icons } from "@/components/Icons";
 
 export default function LoginPage() {
-  const [step, setStep] = useState<"social" | "email" | "verify">("social");
+  const [step, setStep] = useState<"social" | "email" | "verify" | "magic">("social");
   const [email, setEmail] = useState("");
   const [code, setCode] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [magicSent, setMagicSent] = useState(false);
   
   const supabase = createClient();
 
@@ -49,21 +50,24 @@ export default function LoginPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email }),
-      }).then(r => r.json()).catch(() => ({ exists: false, verified: false }));
+      }).then((r) => r.json()).catch(() => ({ exists: false, verified: false }));
 
-      // 이미 인증된 사용자는 매직 링크 방식으로 로그인
+      // 이미 학교 인증이 완료된 사용자는 매직 링크 방식으로 로그인
       if (check.verified) {
         const linkRes = await fetch('/api/auth/send-magic-link', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ email }),
-        }).then(r => r.json());
+        }).then((r) => r.json());
 
         if (linkRes.success) {
           alert("✨ 매직 링크가 메일로 발송되었습니다!\n링크를 클릭하면 자동으로 로그인됩니다.");
-          setStep("verify");
+          setStep("magic");
+          setMagicSent(true);
           return;
         }
+
+        alert("매직 링크 발송 중 오류가 발생했습니다. 인증번호 방식으로 계속 진행합니다.");
       }
 
       // 미인증 사용자는 기존 OTP 플로우
@@ -125,26 +129,31 @@ export default function LoginPage() {
       if (data.session) {
         alert("이메일 인증이 완료되었습니다! 🎉");
         try {
-          // 인증된 사용자의 프로필 존재 여부 확인
+          // 사용자가 이메일 OTP로 인증을 통과하면 school_email_verified 상태를 보존
           const supabase2 = createClient();
           const { data: { user: verifiedUser } } = await supabase2.auth.getUser();
           if (verifiedUser) {
+            await supabase2.from('profiles').upsert(
+              {
+                id: verifiedUser.id,
+                school_email_verified: true,
+              },
+              { onConflict: 'id' }
+            );
+
             const { data: profile, error: profErr } = await supabase2
               .from('profiles')
               .select('id')
               .eq('id', verifiedUser.id)
               .maybeSingle();
             if (!profErr && profile) {
-              // 이미 프로필이 있으면 바로 홈으로 이동
               window.location.href = '/home';
               return;
             }
           }
         } catch (e) {
-          // 검사 실패 시 안전하게 온보딩으로 이동
-          console.error('profile check failed', e);
+          console.error('profile verify/upsert failed', e);
         }
-        // 프로필이 없으면 온보딩으로 이동하여 프로필 생성 유도
         window.location.href = '/onboarding';
       } else {
         throw new Error("세션을 생성할 수 없습니다.");
@@ -222,6 +231,7 @@ export default function LoginPage() {
             {step === "social" && "소셜 계정 또는 이메일로 간편하게 시작하세요"}
             {step === "email" && "학교 이메일로 재학생 인증하기"}
             {step === "verify" && "인증번호를 입력해주세요"}
+            {step === "magic" && "이미 인증된 학교 이메일입니다. 매직 링크로 바로 로그인하세요"}
           </p>
         </div>
 
@@ -633,6 +643,51 @@ export default function LoginPage() {
                 인증번호 다시 받기
               </button>
             </form>
+          </div>
+        )}
+
+        {/* Magic Link Step */}
+        {step === "magic" && (
+          <div
+            className="glass-card"
+            style={{
+              padding: "32px 24px",
+              animation: "fadeIn 0.4s ease-out",
+            }}
+          >
+            <div style={{ textAlign: "center", marginBottom: "24px" }}>
+              <div
+                style={{
+                  color: "var(--primary-400)",
+                  display: "flex",
+                  justifyContent: "center",
+                  marginBottom: "16px",
+                }}
+              >
+                <Icons.Send />
+              </div>
+              <p style={{ fontSize: "14px", color: "var(--text-secondary)" }}>
+                <strong style={{ color: "var(--primary-400)" }}>{email}</strong>
+                <br />
+                매직 링크를 발송했습니다. 메일함에서 링크를 클릭하면 자동으로 로그인됩니다.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setStep("email")}
+              style={{
+                width: "100%",
+                padding: "12px",
+                background: "var(--bg-glass)",
+                border: "1px solid var(--border-medium)",
+                borderRadius: "var(--radius-md)",
+                color: "var(--text-primary)",
+                cursor: "pointer",
+                fontFamily: "inherit",
+              }}
+            >
+              다른 이메일로 다시 시도하기
+            </button>
           </div>
         )}
       </div>

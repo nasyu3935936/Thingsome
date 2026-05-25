@@ -1,4 +1,5 @@
-import { NextResponse } from 'next/server'
+import { NextResponse } from 'next/server';
+import { createClient } from '@supabase/supabase-js';
 
 export async function POST(req: Request) {
   try {
@@ -11,24 +12,17 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'SUPABASE config missing' }, { status: 500 });
     }
 
-    // Magic link 발송 via Supabase Admin API
-    const url = `${supabaseUrl.replace(/\/$/, '')}/auth/v1/magic_link`;
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${serviceKey}`,
-        apikey: serviceKey,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        email,
-        shouldCreateUser: false, // 기존 사용자만 가능
-      }),
+    const supabase = createClient(supabaseUrl, serviceKey, {
+      auth: { persistSession: false },
     });
 
-    if (!res.ok) {
-      const text = await res.text();
-      return NextResponse.json({ error: text }, { status: res.status });
+    const { error } = await supabase.auth.admin.generateLink({
+      type: 'magiclink',
+      email,
+    });
+
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
     return NextResponse.json({ success: true });
