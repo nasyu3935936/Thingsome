@@ -181,6 +181,8 @@ export default function HomePage() {
   const [candidates, setCandidates] = useState<any[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [myProfile, setMyProfile] = useState<any>({ nickname: "나" });
+  const [alreadyMatchedIds, setAlreadyMatchedIds] = useState<string[]>([]);
+  const [matchSuccess, setMatchSuccess] = useState<any | null>(null);
 
   // 실시간 통계 (기본값 0)
   const [statMatches, setStatMatches] = useState(0);
@@ -242,6 +244,16 @@ export default function HomePage() {
               if (myp && myp.major) myMajor = myp.major;
             } catch (e) { /* ignore */ }
 
+          const { data: rooms, error: roomsError } = await supabase
+            .from('chat_rooms')
+            .select('user1_id,user2_id')
+            .or(`user1_id.eq.${user.id},user2_id.eq.${user.id}`);
+
+          const matchedIds = rooms && !roomsError
+            ? Array.from(new Set(rooms.flatMap((r: any) => [r.user1_id, r.user2_id]).filter((id: any) => id !== user.id)))
+            : [];
+          setAlreadyMatchedIds(matchedIds);
+
             const { data: profiles, error } = await supabase
               .from('profiles')
               .select('*')
@@ -249,8 +261,9 @@ export default function HomePage() {
               .limit(20);
 
             if (!error && profiles && profiles.length > 0) {
-              // 필터링: 같은 학과 제외 옵션이 켜져 있고 내 학과를 알 수 있다면 동일 학과는 제외
+              // 필터링: 이미 매칭된 상대 및 같은 학과 제외 옵션을 반영
               const filtered = profiles.filter((p: any) => {
+                if (matchedIds.includes(p.id)) return false;
                 if (excludeSame && myMajor && (p.major || '') === myMajor) return false;
                 return true;
               });
@@ -332,172 +345,57 @@ export default function HomePage() {
 
   const currentMatch = candidates[currentIndex];
 
-  const handleStartMatching = () => {
-    (async () => {
-      try {
-        const supabase = createClient();
-        const { data: { user } } = await supabase.auth.getUser();
-        const DEV_EMAIL = 'suk3935936@mju.ac.kr';
-        const isDev = !!(user && user.email && user.email.toLowerCase() === DEV_EMAIL);
-        if (!user) {
-          alert('로그인이 필요합니다.');
-          return;
-        }
-
-        // 일일 매칭 횟수 제한(오늘 생성된 chat_rooms 수)
-        const todayStart = new Date();
-        todayStart.setHours(0, 0, 0, 0);
-        const { count: todayCount } = await supabase
-          .from('chat_rooms')
-          .select('*', { count: 'exact', head: true })
-          .or(`user1_id.eq.${user.id},user2_id.eq.${user.id}`)
-          .gte('created_at', todayStart.toISOString());
-
-        // 개발자 계정은 제한 해제
-        if (!isDev && (todayCount || 0) >= 3) {
-          alert('오늘은 이미 3회 매칭을 진행하셨습니다. 내일 다시 시도해주세요.');
-          return;
-        }
-
-        setIsMatching(true);
-        const MAX_SECONDS = 30;
-        let elapsed = 0;
-        setMatchingCountdown(MAX_SECONDS - elapsed);
-
-        // helper: 시도해서 후보 한 명 리턴
-        const tryFindCandidate = async () => {
-          // 먼저 내 프로필을 가져와 성별 등 정보 사용
-          let myGender: string | null = null;
-          try {
-            const { data: myp } = await supabase.from('profiles').select('gender').eq('id', user.id).maybeSingle();
-            if (myp && myp.gender) myGender = myp.gender;
-          } catch (e) {}
-
-          // 개발자 모드이면 성별/제약 없이 전체 후보를 탐색
-          let query = supabase.from('profiles').select('*').neq('id', user.id).limit(20);
-          if (!isDev) {
-            if (myGender === '남성') query = query.eq('gender', '여성');
-            else if (myGender === '여성') query = query.eq('gender', '남성');
-          }
-
-          const { data: candidatesRaw, error } = await query;
-          if (error || !candidatesRaw || candidatesRaw.length === 0) return null;
-
-          // 랜덤 후보 하나 선택
-          const shuffled = candidatesRaw.sort(() => 0.5 - Math.random());
-          return shuffled[0];
-        };
-
-        // 폴링 루프: 1초 간격으로 최대 MAX_SECONDS (UI는 1초 단위로 카운트)
-        const intervalMs = 1000;
-        const intervalId = setInterval(async () => {
-          elapsed += 1; // seconds
-          setMatchingCountdown(Math.max(0, MAX_SECONDS - elapsed));
-          try {
-            const candidate = await tryFindCandidate();
-            if (candidate) {
-              clearInterval(intervalId);
-              setMatchingCountdown(null);
-              // 채팅방 생성 및 이동
-                try {
-                  // enforce per-user 3 active rooms (24h window)
-                  const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-                  const { data: myRooms } = await supabase.from('chat_rooms').select('id').or(`user1_id.eq.${user.id},user2_id.eq.${user.id}`).gte('created_at', cutoff);
-                  if (myRooms && myRooms.length >= 3) {
-                    alert('활성 채팅방이 3개를 초과하여 새 채팅을 생성할 수 없습니다.');
-                    setIsMatching(false);
-                    return;
-                  }
-                  // check candidate active rooms
-                  const { data: candRooms } = await supabase.from('chat_rooms').select('id').or(`user1_id.eq.${candidate.id},user2_id.eq.${candidate.id}`).gte('created_at', cutoff);
-                  if (candRooms && candRooms.length >= 3) {
-                    // candidate too busy, continue polling
-                    setIsMatching(true);
-                    return;
-                  }
-
-                  const { data: room, error: roomErr } = await supabase.from('chat_rooms').insert({ user1_id: user.id, user2_id: candidate.id }).select().single();
-                  if (!roomErr && room) {
-                    setIsMatching(false);
-                    window.location.href = `/chat?roomId=${room.id}&nickname=${candidate.nickname}`;
-                    return;
-                  }
-                } catch (e) {
-                  console.error('chat room create failed', e);
-                }
-            }
-
-            if (elapsed >= MAX_SECONDS) {
-              clearInterval(intervalId);
-              setMatchingCountdown(null);
-              // 폴백: 성별 반대인 프로필(프로필 설정된 사용자)에서 하나 선택
-              try {
-                const myp = await supabase.from('profiles').select('gender').eq('id', user.id).maybeSingle();
-                const myGender = myp.data ? myp.data.gender : null;
-                // 개발자 모드이면 제약 없이 폴백 후보 사용
-                let fallbackQ = supabase.from('profiles').select('*').neq('id', user.id).limit(20);
-                if (!isDev) {
-                  if (myGender === '남성') fallbackQ = fallbackQ.eq('gender', '여성');
-                  else if (myGender === '여성') fallbackQ = fallbackQ.eq('gender', '남성');
-                }
-                const { data: fallbackList } = await fallbackQ;
-                if (fallbackList && fallbackList.length > 0) {
-                  const pick = fallbackList.sort(() => 0.5 - Math.random())[0];
-                    // enforce per-user limit before fallback create
-                    try {
-                      const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-                      const { data: myRooms } = await supabase.from('chat_rooms').select('id').or(`user1_id.eq.${user.id},user2_id.eq.${user.id}`).gte('created_at', cutoff);
-                      if (myRooms && myRooms.length >= 3) {
-                        alert('활성 채팅방이 3개를 초과하여 새 채팅을 생성할 수 없습니다.');
-                        setIsMatching(false);
-                        return;
-                      }
-                      const { data: candRooms } = await supabase.from('chat_rooms').select('id').or(`user1_id.eq.${pick.id},user2_id.eq.${pick.id}`).gte('created_at', cutoff);
-                      if (candRooms && candRooms.length >= 3) {
-                        // candidate busy, skip
-                      } else {
-                        const { data: room, error: roomErr } = await supabase.from('chat_rooms').insert({ user1_id: user.id, user2_id: pick.id }).select().single();
-                        if (!roomErr && room) {
-                          setIsMatching(false);
-                          window.location.href = `/chat?roomId=${room.id}&nickname=${pick.nickname}`;
-                          return;
-                        }
-                      }
-                    } catch (e) {
-                      console.error('fallback chat create failed', e);
-                    }
-                }
-              } catch (e) {
-                console.error('fallback match failed', e);
-              }
-
-              setIsMatching(false);
-              alert('매칭 가능한 사용자를 찾지 못했습니다. 잠시 후 다시 시도해 주세요.');
-            }
-          } catch (err) {
-            console.error('matching loop error', err);
-            clearInterval(intervalId);
-            setMatchingCountdown(null);
-            setIsMatching(false);
-            alert('매칭 중 오류가 발생했습니다. 다시 시도해주세요.');
-          }
-        }, intervalMs);
-
-      } catch (err) {
-        console.error('start matching failed', err);
-        alert('매칭 시작 중 오류가 발생했습니다.');
+  const handleStartMatching = async () => {
+    try {
+      const supabase = createClient();
+      const { data: { user } } = await supabase.auth.getUser();
+      const DEV_EMAIL = 'suk3935936@mju.ac.kr';
+      const isDev = !!(user && user.email && user.email.toLowerCase() === DEV_EMAIL);
+      if (!user) {
+        alert('로그인이 필요합니다.');
+        return;
       }
-    })();
+
+      // 일일 매칭 횟수 제한(오늘 생성된 chat_rooms 수)
+      const todayStart = new Date();
+      todayStart.setHours(0, 0, 0, 0);
+      const { count: todayCount } = await supabase
+        .from('chat_rooms')
+        .select('*', { count: 'exact', head: true })
+        .or(`user1_id.eq.${user.id},user2_id.eq.${user.id}`)
+        .gte('created_at', todayStart.toISOString());
+
+      // 개발자 계정은 제한 해제
+      if (!isDev && (todayCount || 0) >= 3) {
+        alert('오늘은 이미 3회 매칭을 진행하셨습니다. 내일 다시 시도해주세요.');
+        return;
+      }
+
+      if (candidates.length === 0) {
+        alert('현재 추천할 신규 후보가 없습니다. 잠시 후 다시 시도해 주세요.');
+        return;
+      }
+
+      setShowMatch(true);
+      setMatchAccepted(false);
+      setMatchSuccess(null);
+      setIsMatching(false);
+      setCurrentIndex(0);
+    } catch (err) {
+      console.error('start matching failed', err);
+      alert('매칭 시작 중 오류가 발생했습니다.');
+    }
   };
 
   const handleAccept = async () => {
+    if (!currentMatch) return;
     setMatchAccepted(true);
 
     try {
       const supabase = createClient();
       const { data: { user } } = await supabase.auth.getUser();
       
-      if (user && currentMatch && currentMatch.id && !currentMatch.id.toString().startsWith("demo")) {
+      if (user && currentMatch.id && !currentMatch.id.toString().startsWith("demo")) {
         try {
           const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
           const { data: myRooms } = await supabase.from('chat_rooms').select('id').or(`user1_id.eq.${user.id},user2_id.eq.${user.id}`).gte('created_at', cutoff);
@@ -515,9 +413,9 @@ export default function HomePage() {
 
           const { data: room, error } = await supabase.from('chat_rooms').insert({ user1_id: user.id, user2_id: currentMatch.id }).select().single();
           if (!error && room) {
-            setTimeout(() => {
-              window.location.href = `/chat?roomId=${room.id}&nickname=${currentMatch.nickname}`;
-            }, 1500);
+            setShowMatch(false);
+            setMatchSuccess({ ...currentMatch, roomId: room.id });
+            setAlreadyMatchedIds((prev) => Array.from(new Set([...prev, currentMatch.id])));
             return;
           } else {
             console.error("채팅방 생성 에러:", error);
@@ -536,11 +434,12 @@ export default function HomePage() {
   };
 
   const handleReject = () => {
-    const nextIndex = currentIndex + 1;
-    if (nextIndex < candidates.length) {
-      setShowMatch(false);
-      setCurrentIndex(nextIndex);
-      setTimeout(() => setShowMatch(true), 100);
+    const nextCandidates = [...candidates];
+    nextCandidates.splice(currentIndex, 1);
+    if (nextCandidates.length > 0) {
+      setCandidates(nextCandidates);
+      setCurrentIndex(0);
+      setShowMatch(true);
     } else {
       alert("오늘은 더 이상 추천할 새로운 상대가 없습니다.\n내일 다시 찾아주세요!");
       setShowMatch(false);
@@ -671,6 +570,11 @@ export default function HomePage() {
               <Icons.Sparkles />
               매칭 시작하기
             </button>
+            {alreadyMatchedIds.length > 0 && (
+              <p style={{ marginTop: '16px', fontSize: '12px', color: 'var(--text-muted)', lineHeight: 1.6 }}>
+                이미 매칭된 상대는 추천에서 제외됩니다. ({alreadyMatchedIds.length}명)
+              </p>
+            )}
           </div>
         )}
 
@@ -762,7 +666,41 @@ export default function HomePage() {
         )}
 
         {/* Match Accepted */}
-        {matchAccepted && (
+        {matchAccepted && matchSuccess && (
+          <div
+            className="glass-card"
+            style={{
+              padding: "48px 24px",
+              textAlign: "center",
+              animation: "fadeIn 0.4s ease-out",
+            }}
+          >
+            <div style={{ color: "var(--primary-400)", display: "flex", justifyContent: "center", marginBottom: "24px", animation: "heartbeat 1s ease-in-out infinite" }}>
+              <Icons.Party />
+            </div>
+            <h2 style={{ fontSize: "22px", fontWeight: 700, marginBottom: "8px" }}>
+              매칭이 성공했습니다!
+            </h2>
+            <p style={{ color: "var(--text-secondary)", fontSize: "14px", marginBottom: '20px' }}>
+              {matchSuccess.nickname}님과 매칭되었습니다. 채팅을 통해 서로 확인해보세요.
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                if (matchSuccess.roomId) {
+                  window.location.href = `/chat?roomId=${matchSuccess.roomId}&nickname=${matchSuccess.nickname}`;
+                } else {
+                  window.location.href = '/chat';
+                }
+              }}
+              className="btn-primary"
+              style={{ width: '100%', maxWidth: '280px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
+            >
+              <Icons.Chat /> 채팅으로 이동
+            </button>
+          </div>
+        )}
+        {matchAccepted && !matchSuccess && (
           <div
             className="glass-card"
             style={{
@@ -778,7 +716,7 @@ export default function HomePage() {
               매칭이 성사되었어요!
             </h2>
             <p style={{ color: "var(--text-secondary)", fontSize: "14px" }}>
-              채팅방으로 이동합니다...
+              채팅 페이지로 이동합니다...
             </p>
           </div>
         )}

@@ -129,17 +129,15 @@ export default function LoginPage() {
       if (data.session) {
         alert("이메일 인증이 완료되었습니다! 🎉");
         try {
-          // 사용자가 이메일 OTP로 인증을 통과하면 school_email_verified 상태를 보존
           const supabase2 = createClient();
           const { data: { user: verifiedUser } } = await supabase2.auth.getUser();
           if (verifiedUser) {
-            await supabase2.from('profiles').upsert(
-              {
-                id: verifiedUser.id,
-                school_email_verified: true,
-              },
-              { onConflict: 'id' }
-            );
+            const { error: metaError } = await supabase2.auth.updateUser({
+              data: { school_email_verified: true },
+            });
+            if (metaError) {
+              console.error('user metadata update failed', metaError);
+            }
 
             const { data: profile, error: profErr } = await supabase2
               .from('profiles')

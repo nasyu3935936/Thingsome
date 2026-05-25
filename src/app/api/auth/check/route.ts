@@ -30,8 +30,17 @@ export async function POST(req: Request) {
     const exists = Array.isArray(users) && users.length > 0;
     let verified = false;
 
-    // 사용자가 존재하면, profiles 테이블에서 school_email_verified 확인
-    if (exists && users[0].id) {
+    // 사용자가 존재하면, profiles 테이블과 auth user metadata에서 school_email_verified 확인
+    if (exists && users[0]) {
+      try {
+        const userMeta = users[0].raw_user_meta_data;
+        if (userMeta && userMeta.school_email_verified === true) {
+          verified = true;
+        }
+      } catch (e) {
+        // ignore metadata parse error
+      }
+
       try {
         const profileRes = await fetch(`${supabaseUrl.replace(/\/$/, '')}/rest/v1/profiles?id=eq.${encodeURIComponent(users[0].id)}&select=school_email_verified`, {
           headers: {
@@ -41,7 +50,9 @@ export async function POST(req: Request) {
         });
         if (profileRes.ok) {
           const profiles = await profileRes.json();
-          verified = Array.isArray(profiles) && profiles.length > 0 && profiles[0].school_email_verified === true;
+          if (Array.isArray(profiles) && profiles.length > 0 && profiles[0].school_email_verified === true) {
+            verified = true;
+          }
         }
       } catch (e) {
         // ignore profile fetch error
