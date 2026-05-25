@@ -10,12 +10,34 @@ const DEPARTMENTS = [
   "사회과학대학",
   "경영대학",
   "법과대학",
-  "ICT융합대학",
-  "공과대학",
-  "자연과학대학",
-  "예술체육대학",
+  "미디어·휴먼라이프대학",
+  "인공지능·소프트웨어융합대학",
+  "미래융합대학",
+  "화학·생명과학대학",
+  "스마트시스템공과대학",
+  "반도체·ICT대학",
+  "스포츠·예술대학",
   "건축대학",
+  "아너칼리지",
+  "방목기초교육대학",
 ];
+
+const MAJORS: Record<string, string[]> = {
+  "인문대학": ["인문콘텐츠학부", "국어국문학전공", "영어영문학전공", "미술사·역사학전공", "문헌정보학전공", "문예창작학과", "철학과", "아랍지역학전공", "글로벌한국어학전공"],
+  "사회과학대학": ["공공인재학부(행정학전공)", "정치외교학전공", "경상·통계학부(경제학전공)", "국제통상학전공", "응용통계학전공", "법학과"],
+  "경영대학": ["경영학부(경영학전공)", "글로벌비즈니스학전공", "경영정보학과"],
+  "법과대학": ["법학과"],
+  "미디어·휴먼라이프대학": ["디지털미디어학부", "청소년지도·아동학부", "유아교육과", "심리치료학과", "사회복지서비스학과", "보건정보관리학과"],
+  "인공지능·소프트웨어융합대학": ["융합소프트웨어학부(응용소프트웨어전공)", "데이터사이언스전공", "인공지능전공", "디지털콘텐츠디자인학과"],
+  "미래융합대학": ["창의융합인재학부", "사회복지학과", "부동산학과", "법무행정학과", "심리치료학과", "미래융합경영학과", "회계세무학과", "멀티디자인학과"],
+  "화학·생명과학대학": ["화학·에너지융합학부(화학나노학전공)", "융합에너지학전공", "융합바이오학부(식품영양학전공)", "시스템생명과학전공", "수학과", "물리학과"],
+  "스마트시스템공과대학": ["기계시스템공학부(기계공학전공)", "로봇공학전공", "스마트인프라공학부(건설환경공학전공)", "환경시스템공학전공", "스마트모빌리티공학전공", "화학신소재공학부"],
+  "반도체·ICT대학": ["반도체공학부", "전기공학전공", "전자공학전공", "컴퓨터공학전공", "정보통신공학전공", "산업경영공학과"],
+  "스포츠·예술대학": ["디자인학부(비주얼커뮤니케이션디자인)", "인더스트리얼디자인전공", "영상애니메이션디자인전공", "패션디자인전공", "공연예술학부(연극·영화전공)", "뮤지컬공연전공", "스포츠학부", "아트앤멀티미디어음악학부"],
+  "건축대학": ["건축학부(건축학전공)", "전통건축전공", "공간디자인학과"],
+  "아너칼리지": ["자율전공학부(인문)", "자율전공학부(자연)"],
+  "방목기초교육대학": ["방목기초교육대학(인문)", "방목기초교육대학(자연)"],
+};
 
 const INTEREST_OPTIONS = [
   "운동", "영화", "음악", "독서", "게임", "여행", "맛집",
@@ -29,6 +51,7 @@ export default function OnboardingPage() {
   const [profile, setProfile] = useState({
     nickname: "",
     department: "",
+    major: "",
     admissionYear: "",
     gender: "",
     age: "",
@@ -94,7 +117,7 @@ export default function OnboardingPage() {
       const { error } = await supabase.from("profiles").upsert({
         id: user.id,
         nickname: profile.nickname,
-        major: profile.department,
+        major: profile.major || profile.department,
         student_id: profile.admissionYear,
         gender: profile.gender,
         age: parseInt(profile.age),
@@ -230,7 +253,7 @@ export default function OnboardingPage() {
               <select
                 className="input-field"
                 value={profile.department}
-                onChange={(e) => setProfile({ ...profile, department: e.target.value })}
+                onChange={(e) => setProfile({ ...profile, department: e.target.value, major: "" })}
                 style={{ cursor: "pointer" }}
               >
                 <option value="">학과 계열 선택</option>
@@ -241,6 +264,23 @@ export default function OnboardingPage() {
                 ))}
               </select>
             </div>
+
+            {profile.department && (
+              <div>
+                <label className="input-label">학과 / 전공</label>
+                <select
+                  className="input-field"
+                  value={profile.major}
+                  onChange={(e) => setProfile({ ...profile, major: e.target.value })}
+                  style={{ cursor: "pointer" }}
+                >
+                  <option value="">학과/전공 선택 (선택사항)</option>
+                  {(MAJORS[profile.department] || []).map((m) => (
+                    <option key={m} value={m}>{m}</option>
+                  ))}
+                </select>
+              </div>
+            )}
 
             {/* Admission Year */}
             <div>

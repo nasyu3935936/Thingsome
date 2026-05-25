@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { createClient } from "@/utils/supabase/client";
 
 // ========== 고급스러운 SVG 아이콘 모음 ==========
@@ -21,20 +22,59 @@ const Icons = {
 };
 
 function BottomNav({ active }: { active: string }) {
+  const router = useRouter();
+  const supabase = createClient();
   const items = [
     { id: "home", label: "홈", icon: <Icons.Home />, href: "/home" },
     { id: "chat", label: "채팅", icon: <Icons.Chat />, href: "/chat" },
     { id: "ssum", label: "썸 측정", icon: <Icons.Sparkles />, href: "/ssum" },
     { id: "my", label: "마이", icon: <Icons.User />, href: "/mypage" },
   ];
+
+  const handleChatClick = async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        alert('로그인이 필요합니다.');
+        router.push('/login');
+        return;
+      }
+
+      const { data: rooms, error } = await supabase
+        .from('chat_rooms')
+        .select('id')
+        .or(`user1_id.eq.${user.id},user2_id.eq.${user.id}`)
+        .limit(1);
+
+      if (error) throw error;
+      if (rooms && (rooms as any).length > 0) {
+        router.push('/chat');
+      } else {
+        alert('매칭 중인 방이 없습니다!');
+        router.push('/home');
+      }
+    } catch (e) {
+      console.error('chat nav error', e);
+      alert('채팅을 불러오지 못했습니다.');
+      router.push('/home');
+    }
+  };
+
   return (
     <nav className="nav-bottom">
       <div className="nav-bottom-inner">
         {items.map((item) => (
-          <Link key={item.id} href={item.href} className={`nav-item ${active === item.id ? "nav-item-active" : ""}`}>
-            <span style={{ marginBottom: "4px" }}>{item.icon}</span>
-            <span style={{ fontSize: "10px" }}>{item.label}</span>
-          </Link>
+          item.id === 'chat' ? (
+            <button key={item.id} onClick={handleChatClick} type="button" className={`nav-item ${active === item.id ? "nav-item-active" : ""}`}>
+              <span style={{ marginBottom: "4px" }}>{item.icon}</span>
+              <span style={{ fontSize: "10px" }}>{item.label}</span>
+            </button>
+          ) : (
+            <Link key={item.id} href={item.href} className={`nav-item ${active === item.id ? "nav-item-active" : ""}`}>
+              <span style={{ marginBottom: "4px" }}>{item.icon}</span>
+              <span style={{ fontSize: "10px" }}>{item.label}</span>
+            </Link>
+          )
         ))}
       </div>
     </nav>
@@ -42,7 +82,8 @@ function BottomNav({ active }: { active: string }) {
 }
 
 export default function MyPage() {
-  const [profile, setProfile] = useState({
+  // 프로필 상태 (온보딩에서 사용한 필드와 동일하게 유지)
+  const [profile, setProfile] = useState<any>({
     nickname: "캠퍼스탐험가",
     department: "ICT융합대학",
     year: 2023,
@@ -50,59 +91,189 @@ export default function MyPage() {
     gender: "남성",
     bio: "명지대 캠퍼스를 사랑하는 개발자",
     interests: ["코딩", "카페", "운동", "음악", "영화"],
+    prefDepartments: [] as string[],
+    prefExcludeSameDept: false,
+    prefAgeMin: 20,
+    prefAgeMax: 28,
   });
 
   const [activeModal, setActiveModal] = useState<string | null>(null);
 
   // 프로필 수정 폼 상태
-  const [editForm, setEditForm] = useState({ nickname: "", bio: "" });
+  const INTEREST_OPTIONS = [
+    "운동", "영화", "음악", "독서", "게임", "여행", "맛집",
+    "카페", "패션", "사진", "요리", "반려동물", "K-POP",
+    "넷플릭스", "캠핑", "헬스", "러닝", "등산", "드로잉",
+    "코딩", "자기계발", "봉사활동",
+  ];
+
+  const DEPARTMENTS = [
+    "인문대학",
+    "사회과학대학",
+    "경영대학",
+    "법과대학",
+    "미디어·휴먼라이프대학",
+    "인공지능·소프트웨어융합대학",
+    "미래융합대학",
+    "화학·생명과학대학",
+    "스마트시스템공과대학",
+    "반도체·ICT대학",
+    "스포츠·예술대학",
+    "건축대학",
+    "아너칼리지",
+    "방목기초교육대학",
+  ];
+
+    const MAJORS: Record<string, string[]> = {
+      "인문대학": ["인문콘텐츠학부", "국어국문학전공", "영어영문학전공", "미술사·역사학전공", "문헌정보학전공", "문예창작학과", "철학과", "아랍지역학전공", "글로벌한국어학전공"],
+      "사회과학대학": ["공공인재학부(행정학전공)", "정치외교학전공", "경상·통계학부(경제학전공)", "국제통상학전공", "응용통계학전공", "법학과"],
+      "경영대학": ["경영학부(경영학전공)", "글로벌비즈니스학전공", "경영정보학과"],
+      "법과대학": ["법학과"],
+      "미디어·휴먼라이프대학": ["디지털미디어학부", "청소년지도·아동학부", "유아교육과", "심리치료학과", "사회복지서비스학과", "보건정보관리학과"],
+      "인공지능·소프트웨어융합대학": ["융합소프트웨어학부(응용소프트웨어전공)", "데이터사이언스전공", "인공지능전공", "디지털콘텐츠디자인학과"],
+      "미래융합대학": ["창의융합인재학부", "사회복지학과", "부동산학과", "법무행정학과", "심리치료학과", "미래융합경영학과", "회계세무학과", "멀티디자인학과"],
+      "화학·생명과학대학": ["화학·에너지융합학부(화학나노학전공)", "융합에너지학전공", "융합바이오학부(식품영양학전공)", "시스템생명과학전공", "수학과", "물리학과"],
+      "스마트시스템공과대학": ["기계시스템공학부(기계공학전공)", "로봇공학전공", "스마트인프라공학부(건설환경공학전공)", "환경시스템공학전공", "스마트모빌리티공학전공", "화학신소재공학부"],
+      "반도체·ICT대학": ["반도체공학부", "전기공학전공", "전자공학전공", "컴퓨터공학전공", "정보통신공학전공", "산업경영공학과"],
+      "스포츠·예술대학": ["디자인학부(비주얼커뮤니케이션디자인)", "인더스트리얼디자인전공", "영상애니메이션디자인전공", "패션디자인전공", "공연예술학부(연극·영화전공)", "뮤지컬공연전공", "스포츠학부", "아트앤멀티미디어음악학부"],
+      "건축대학": ["건축학부(건축학전공)", "전통건축전공", "공간디자인학과"],
+      "아너칼리지": ["자율전공학부(인문)", "자율전공학부(자연)"],
+      "방목기초교육대학": ["방목기초교육대학(인문)", "방목기초교육대학(자연)"],
+    };
+
+  const [editForm, setEditForm] = useState<any>({ nickname: "", bio: "", department: "", major: "", year: "", age: "", gender: "", interests: [] as string[], prefDepartments: [] as string[], prefExcludeSameDept: false, prefAgeMin: 20, prefAgeMax: 28 });
+  const [saving, setSaving] = useState(false);
 
   const supabase = createClient();
 
   useEffect(() => {
-    // 저장된 프로필이 있다면 불러오기 (DB 연동 시 여기서 Supabase select 사용)
-    const saved = localStorage.getItem("thingsome_temp_profile");
-    if (saved) {
+    // 로그인 사용자가 있다면 DB에서 프로필을 불러옵니다. 없으면 로컬 저장소를 사용.
+    (async () => {
       try {
-        const parsed = JSON.parse(saved);
-        setProfile({
-          nickname: parsed.nickname || "캠퍼스탐험가",
-          department: parsed.department || "ICT융합대학",
-          year: parsed.admissionYear || 2023,
-          age: parsed.age || 24,
-          gender: parsed.gender || "남성",
-          bio: parsed.bio || "방금 온보딩에서 작성하신 소개글입니다",
-          interests: parsed.interests && parsed.interests.length > 0 ? parsed.interests : ["선택없음"],
-        });
-      } catch (e) {
-        console.error("Failed to parse temp profile");
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          const { data: dbProfile, error } = await supabase.from('profiles').select('*').eq('id', user.id).maybeSingle();
+            if (!error && dbProfile) {
+            // 사용자의 로컬 설정(같은 학과 제외)이 있으면 우선 사용
+            const localExclude = (() => { try { return localStorage.getItem('thingsome_pref_exclude_same_dept') === 'true'; } catch (e) { return false; } })();
+            setProfile({
+              nickname: dbProfile.nickname || '익명',
+              department: dbProfile.major || DEPARTMENTS[0],
+              year: dbProfile.student_id || 2024,
+              age: dbProfile.age || 20,
+              gender: dbProfile.gender || '',
+              bio: dbProfile.bio || '',
+              interests: dbProfile.tags || [],
+              prefDepartments: dbProfile.pref_departments || [],
+              prefExcludeSameDept: localExclude,
+              prefAgeMin: dbProfile.preferred_age_min || 20,
+              prefAgeMax: dbProfile.preferred_age_max || 28,
+            });
+            return;
+          }
+        }
+
+        // DB에 프로필이 없으면 로컬 임시 프로필 불러오기
+        const saved = localStorage.getItem('thingsome_temp_profile');
+        if (saved) {
+          try {
+            const parsed = JSON.parse(saved);
+            const parsedExclude = parsed.prefExcludeSameDept === true || parsed.prefExcludeSameDept === 'true';
+            const localExclude = (() => { try { return localStorage.getItem('thingsome_pref_exclude_same_dept') === 'true'; } catch (e) { return false; } })();
+            setProfile({
+              nickname: parsed.nickname || '캠퍼스탐험가',
+              department: parsed.department || DEPARTMENTS[0],
+              year: parsed.admissionYear || 2023,
+              age: parsed.age || 20,
+              gender: parsed.gender || '여성',
+              bio: parsed.bio || '방금 온보딩에서 작성하신 소개글입니다',
+              interests: parsed.interests && parsed.interests.length > 0 ? parsed.interests : ['선택없음'],
+              prefDepartments: parsed.prefDepartments || [],
+              prefExcludeSameDept: parsed.prefExcludeSameDept || localExclude,
+              prefAgeMin: parsed.prefAgeMin || 20,
+              prefAgeMax: parsed.prefAgeMax || 28,
+            });
+          } catch (e) {
+            console.error('Failed to parse temp profile');
+          }
+        }
+      } catch (err) {
+        console.error('profile load failed', err);
       }
-    }
+    })();
   }, []);
 
   const handleOpenEdit = () => {
-    setEditForm({ nickname: profile.nickname, bio: profile.bio });
+    setEditForm({
+      nickname: profile.nickname,
+      bio: profile.bio,
+      department: profile.department,
+      major: profile.department,
+      year: profile.year,
+      age: profile.age,
+      gender: profile.gender,
+      interests: profile.interests || [],
+      prefDepartments: profile.prefDepartments || [],
+      prefExcludeSameDept: profile.prefExcludeSameDept || false,
+      prefAgeMin: profile.prefAgeMin || 20,
+      prefAgeMax: profile.prefAgeMax || 28,
+    });
     setActiveModal("edit");
   };
+  // 프로필 저장: DB에 upsert 후 상태와 로컬 저장소 업데이트
+  const handleSaveProfile = async () => {
+    setSaving(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      // 준비할 페이로드
+      // DB 스키마에 없는 컬럼(pref_departments 등)을 포함하면 upsert 실패할 수 있으므로
+      // 존재가 확실한 컬럼들만 포함하여 페이로드를 구성합니다.
+      const payload: any = {
+        nickname: editForm.nickname,
+        major: editForm.major || editForm.department,
+        student_id: String(editForm.year),
+        gender: editForm.gender,
+        age: Number(editForm.age),
+        bio: editForm.bio,
+        tags: editForm.interests,
+        preferred_age_min: Number(editForm.prefAgeMin),
+        preferred_age_max: Number(editForm.prefAgeMax),
+      };
 
-  const handleSaveProfile = () => {
-    // 1. 상태 업데이트
-    const updated = { ...profile, nickname: editForm.nickname, bio: editForm.bio };
-    setProfile(updated);
+      if (user) {
+        // upsert (id 포함)
+        const upsertPayload = { id: user.id, ...payload };
+        const { error } = await supabase.from('profiles').upsert(upsertPayload);
+        if (error) throw error;
+      } else {
+        // 비로그인 시 로컬에 저장
+        const saved = localStorage.getItem('thingsome_temp_profile');
+        const parsed = saved ? JSON.parse(saved) : {};
+        const merged = { ...parsed, ...payload };
+        localStorage.setItem('thingsome_temp_profile', JSON.stringify(merged));
+      }
 
-    // 2. 로컬스토리지 업데이트
-    const saved = localStorage.getItem("thingsome_temp_profile");
-    if (saved) {
-      const parsed = JSON.parse(saved);
-      parsed.nickname = editForm.nickname;
-      parsed.bio = editForm.bio;
-      localStorage.setItem("thingsome_temp_profile", JSON.stringify(parsed));
+      // 매칭 선호(같은 학과 제외) 설정은 DB 스키마에 필드가 없을 수 있어 로컬스토리지에 별도 저장
+      try {
+        localStorage.setItem('thingsome_pref_exclude_same_dept', String(!!editForm.prefExcludeSameDept));
+        // also merge into temp profile for dev flows
+        const temp = localStorage.getItem('thingsome_temp_profile');
+        const parsedTemp = temp ? JSON.parse(temp) : {};
+        parsedTemp.prefExcludeSameDept = !!editForm.prefExcludeSameDept;
+        localStorage.setItem('thingsome_temp_profile', JSON.stringify(parsedTemp));
+      } catch (e) {
+        // ignore
+      }
+
+      // 상태 반영: UI에선 기존 `department` 필드에 전공(major)을 보여주도록 반영
+      setProfile((prev: any) => ({ ...prev, department: payload.major || prev.department, ...payload }));
+      alert('프로필이 저장되었습니다.');
+      setActiveModal(null);
+    } catch (err: any) {
+      alert(`프로필 저장 실패: ${err.message}`);
+    } finally {
+      setSaving(false);
     }
-
-    // 3. (추후 추가) Supabase DB 업데이트 로직
-    // supabase.from('profiles').update({ nickname: editForm.nickname, bio: editForm.bio }).eq('id', currentUser.id);
-
-    setActiveModal(null);
   };
 
   const handleLogout = async () => {
@@ -151,7 +322,7 @@ export default function MyPage() {
                 &ldquo;{profile.bio}&rdquo;
               </div>
               <div style={{ display: "flex", gap: "4px", flexWrap: "wrap", marginTop: "8px" }}>
-                {profile.interests.map((tag) => (
+                {profile.interests.map((tag: string) => (
                   <span key={tag} className="tag" style={{ fontSize: "11px", padding: "3px 8px" }}>{tag}</span>
                 ))}
               </div>
@@ -211,18 +382,113 @@ export default function MyPage() {
 
       {/* 1. 프로필 수정 모달 */}
       {activeModal === "edit" && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(15, 11, 26, 0.95)", zIndex: 100, display: "flex", flexDirection: "column", padding: "24px", animation: "fadeIn 0.2s ease-out" }}>
-          <h2 style={{ fontSize: "20px", fontWeight: 700, marginBottom: "24px" }}>프로필 수정</h2>
+        <div style={{ position: "fixed", inset: 0, background: "rgba(15, 11, 26, 0.6)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center", padding: "12px", animation: "fadeIn 0.2s ease-out" }}>
+          <div style={{ width: "100%", maxWidth: 820, height: "calc(100vh - 48px)", borderRadius: 12, overflow: "hidden", boxShadow: "0 10px 40px rgba(0,0,0,0.6)" }}>
+            <div style={{ background: "rgba(15, 11, 26, 0.98)", height: "100%", display: "flex", flexDirection: "column" }}>
+              <div style={{ padding: 20, borderBottom: "1px solid rgba(255,255,255,0.03)" }}>
+                <h2 style={{ fontSize: "20px", fontWeight: 700, margin: 0 }}>프로필 수정</h2>
+              </div>
 
-          <label style={{ fontSize: "14px", color: "var(--text-secondary)", marginBottom: "8px" }}>닉네임</label>
-          <input className="input-field" value={editForm.nickname} onChange={(e) => setEditForm({ ...editForm, nickname: e.target.value })} style={{ marginBottom: "20px" }} />
+              <div style={{ padding: 16, overflowY: "auto", WebkitOverflowScrolling: "touch", overscrollBehavior: "contain", flex: 1, minHeight: 0 }}>
+                <div style={{ display: 'grid', gap: 12 }}>
+                  <div>
+                    <label style={{ fontSize: '14px', color: 'var(--text-secondary)', marginBottom: '8px', display: 'block' }}>닉네임</label>
+                    <input className="input-field" value={editForm.nickname} onChange={(e) => setEditForm({ ...editForm, nickname: e.target.value })} />
+                  </div>
 
-          <label style={{ fontSize: "14px", color: "var(--text-secondary)", marginBottom: "8px" }}>내 소개</label>
-          <textarea className="input-field" value={editForm.bio} onChange={(e) => setEditForm({ ...editForm, bio: e.target.value })} rows={3} style={{ resize: "none", marginBottom: "auto" }} />
+                  <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+                    <div style={{ flex: 1, minWidth: 160 }}>
+                      <label style={{ fontSize: '14px', color: 'var(--text-secondary)', marginBottom: '8px', display: 'block' }}>학과</label>
+                      <select className="input-field" value={editForm.department} onChange={(e) => setEditForm({ ...editForm, department: e.target.value, major: "" })}>
+                        <option value="">선택하세요</option>
+                        {DEPARTMENTS.map((d) => <option key={d} value={d}>{d}</option>)}
+                      </select>
 
-          <div style={{ display: "flex", gap: "12px", marginTop: "32px" }}>
-            <button className="btn-secondary" onClick={() => setActiveModal(null)} style={{ flex: 1 }}>취소</button>
-            <button className="btn-primary" onClick={handleSaveProfile} style={{ flex: 2 }}>저장하기</button>
+                      {/* 전공(세부) 선택: 선택한 학과에 매핑된 전공이 있으면 표시 */}
+                      {(MAJORS[editForm.department] || []).length > 0 && (
+                        <div style={{ marginTop: 10 }}>
+                          <label style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '6px', display: 'block' }}>전공(세부)</label>
+                          <select className="input-field" value={editForm.major} onChange={(e) => setEditForm({ ...editForm, major: e.target.value })}>
+                            <option value="">세부 전공 선택 (선택사항)</option>
+                            {(MAJORS[editForm.department] || []).map((m) => <option key={m} value={m}>{m}</option>)}
+                          </select>
+                        </div>
+                      )}
+                    </div>
+                    <div style={{ width: 120, minWidth: 100 }}>
+                      <label style={{ fontSize: '14px', color: 'var(--text-secondary)', marginBottom: '8px', display: 'block' }}>학번</label>
+                      <input className="input-field" value={editForm.year} onChange={(e) => setEditForm({ ...editForm, year: e.target.value })} />
+                    </div>
+                    <div style={{ width: 100, minWidth: 80 }}>
+                      <label style={{ fontSize: '14px', color: 'var(--text-secondary)', marginBottom: '8px', display: 'block' }}>나이</label>
+                      <input className="input-field" type="number" value={editForm.age} onChange={(e) => setEditForm({ ...editForm, age: Number(e.target.value) })} />
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+                    <div style={{ flex: 1, minWidth: 140 }}>
+                      <label style={{ fontSize: '14px', color: 'var(--text-secondary)', marginBottom: '8px', display: 'block' }}>성별</label>
+                      <select className="input-field" value={editForm.gender} onChange={(e) => setEditForm({ ...editForm, gender: e.target.value })}>
+                        <option value="">선택</option>
+                        <option value="여성">여성</option>
+                        <option value="남성">남성</option>
+                        <option value="기타">기타</option>
+                      </select>
+                    </div>
+                    <div style={{ flex: 1, minWidth: 120 }}>
+                      <label style={{ fontSize: '14px', color: 'var(--text-secondary)', marginBottom: '8px', display: 'block' }}>선호 연령대 (최소)</label>
+                      <input className="input-field" type="number" value={editForm.prefAgeMin} onChange={(e) => setEditForm({ ...editForm, prefAgeMin: Number(e.target.value) })} />
+                    </div>
+                    <div style={{ flex: 1, minWidth: 120 }}>
+                      <label style={{ fontSize: '14px', color: 'var(--text-secondary)', marginBottom: '8px', display: 'block' }}>선호 연령대 (최대)</label>
+                      <input className="input-field" type="number" value={editForm.prefAgeMax} onChange={(e) => setEditForm({ ...editForm, prefAgeMax: Number(e.target.value) })} />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label style={{ fontSize: '14px', color: 'var(--text-secondary)', marginBottom: '8px', display: 'block' }}>내 소개</label>
+                    <textarea className="input-field" value={editForm.bio} onChange={(e) => setEditForm({ ...editForm, bio: e.target.value })} rows={3} style={{ resize: 'vertical' }} />
+                  </div>
+
+                  <div>
+                    <label style={{ fontSize: '14px', color: 'var(--text-secondary)', marginBottom: '8px', display: 'block' }}>관심사 (최대 5개 선택)</label>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                      {INTEREST_OPTIONS.map((tag: string) => {
+                        const active = (editForm.interests || []).includes(tag);
+                        return (
+                          <button key={tag} type="button" onClick={() => {
+                            const curr = editForm.interests || [];
+                            if (curr.includes(tag)) setEditForm({ ...editForm, interests: curr.filter((t: string) => t !== tag) });
+                            else if (curr.length < 5) setEditForm({ ...editForm, interests: [...curr, tag] });
+                          }} className="tag" style={{ opacity: active ? 1 : 0.7 }}>{tag}</button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <div>
+                    <label style={{ fontSize: '14px', color: 'var(--text-secondary)', marginBottom: '8px', display: 'block' }}>선호 학과</label>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                      {DEPARTMENTS.map((d: string) => {
+                        const active = (editForm.prefDepartments || []).includes(d);
+                        return (
+                          <button key={d} type="button" onClick={() => {
+                            const curr = editForm.prefDepartments || [];
+                            if (curr.includes(d)) setEditForm({ ...editForm, prefDepartments: curr.filter((p: string) => p !== d) });
+                            else setEditForm({ ...editForm, prefDepartments: [...curr, d] });
+                          }} className="tag" style={{ opacity: active ? 1 : 0.7 }}>{d}</button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ padding: 12, borderTop: "1px solid rgba(255,255,255,0.03)", display: 'flex', gap: 12 }}>
+                <button className="btn-secondary" onClick={() => setActiveModal(null)} style={{ flex: 1 }}>취소</button>
+                <button className="btn-primary" onClick={handleSaveProfile} style={{ flex: 2 }} disabled={saving}>{saving ? '저장 중...' : '저장하기'}</button>
+              </div>
+            </div>
           </div>
         </div>
       )}
@@ -244,13 +510,25 @@ export default function MyPage() {
           <div className="glass-card" style={{ padding: "20px", marginBottom: "auto" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <span style={{ fontWeight: 600 }}>같은 학과 제외하기</span>
-              <input type="checkbox" defaultChecked style={{ width: "20px", height: "20px", accentColor: "var(--primary-500)" }} />
+              <input
+                type="checkbox"
+                checked={!!editForm.prefExcludeSameDept}
+                onChange={(e) => setEditForm({ ...editForm, prefExcludeSameDept: e.target.checked })}
+                style={{ width: "20px", height: "20px", accentColor: "var(--primary-500)" }}
+              />
             </div>
           </div>
 
           <div style={{ display: "flex", gap: "12px", marginTop: "32px" }}>
             <button className="btn-secondary" onClick={() => setActiveModal(null)} style={{ flex: 1 }}>취소</button>
-            <button className="btn-primary" onClick={() => setActiveModal(null)} style={{ flex: 2 }}>적용하기</button>
+            <button className="btn-primary" onClick={() => {
+                // 저장: 로컬스토리지 및 프로필 상태 반영
+                try {
+                  localStorage.setItem('thingsome_pref_exclude_same_dept', String(!!editForm.prefExcludeSameDept));
+                } catch (e) {}
+                setProfile((p: any) => ({ ...p, prefExcludeSameDept: !!editForm.prefExcludeSameDept }));
+                setActiveModal(null);
+              }} style={{ flex: 2 }}>적용하기</button>
           </div>
         </div>
       )}

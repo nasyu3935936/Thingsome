@@ -1,0 +1,62 @@
+0 verbose cli /usr/local/bin/node /usr/local/bin/npm
+1 info using npm@11.9.0
+2 info using node@v24.14.0
+3 silly config load:file:/usr/local/lib/node_modules/npm/npmrc
+4 silly config load:file:/Users/macbook/Library/Caches/typescript/6.0/.npmrc
+5 silly config load:file:/Users/macbook/.npmrc
+6 silly config load:file:/usr/local/etc/npmrc
+7 verbose title npm install @types/react@ts6.0 @types/react-dom@ts6.0
+8 verbose argv "install" "--ignore-scripts" "@types/react@ts6.0" "@types/react-dom@ts6.0" "--save-dev" "--user-agent" "typesInstaller/6.0.2"
+9 verbose logfile logs-max:10 dir:/Users/macbook/Desktop/SoloProject/Thingsome/.npm-cache/_logs/2026-05-24T12_02_18_482Z-
+10 verbose logfile /Users/macbook/Desktop/SoloProject/Thingsome/.npm-cache/_logs/2026-05-24T12_02_18_482Z-debug-0.log
+11 silly logfile done cleaning log files
+12 silly packumentCache heap:2348810240 maxSize:587202560 maxEntrySize:293601280
+13 silly packumentCache corgi:https://registry.npmjs.org/@types%2freact cache-miss
+14 silly packumentCache corgi:https://registry.npmjs.org/@types%2freact-dom cache-miss
+15 http fetch GET 200 https://registry.npmjs.org/@types%2freact-dom 127ms (cache miss)
+16 silly packumentCache corgi:https://registry.npmjs.org/@types%2freact-dom set size:undefined disposed:false
+17 http fetch GET 200 https://registry.npmjs.org/@types%2freact 134ms (cache miss)
+18 silly packumentCache corgi:https://registry.npmjs.org/@types%2freact set size:undefined disposed:false
+19 silly idealTree buildDeps
+20 silly fetch manifest @types/react-dom@19.2.3
+21 silly packumentCache full:https://registry.npmjs.org/@types%2freact-dom cache-miss
+22 http fetch GET 200 https://registry.npmjs.org/@types%2freact-dom 72ms (cache miss)
+23 silly packumentCache full:https://registry.npmjs.org/@types%2freact-dom set size:undefined disposed:false
+24 silly fetch manifest @types/react@19.2.15
+25 silly packumentCache full:https://registry.npmjs.org/@types%2freact cache-miss
+26 http fetch GET 200 https://registry.npmjs.org/@types%2freact 347ms (cache miss)
+27 silly packumentCache full:https://registry.npmjs.org/@types%2freact set size:undefined disposed:false
+28 silly placeDep ROOT @types/react@19.2.15 OK for:  want: 19.2.15
+29 silly placeDep ROOT @types/react-dom@19.2.3 OK for:  want: 19.2.3
+30 silly fetch manifest csstype@^3.2.2
+31 silly packumentCache full:https://registry.npmjs.org/csstype cache-miss
+32 http fetch GET 200 https://registry.npmjs.org/csstype 38ms (cache miss)
+33 silly packumentCache full:https://registry.npmjs.org/csstype set size:undefined disposed:false
+34 silly placeDep ROOT csstype@3.2.3 OK for: @types/react@19.2.15 want: ^3.2.2
+35 silly reify moves {}
+36 silly audit bulk request {
+36 silly audit   'types-registry': [ '0.1.771' ],
+36 silly audit   '@types/react': [ '19.2.15' ],
+36 silly audit   '@types/react-dom': [ '19.2.3' ],
+36 silly audit   csstype: [ '3.2.3' ]
+36 silly audit }
+37 http cache csstype@https://registry.npmjs.org/csstype/-/csstype-3.2.3.tgz 0ms (cache hit)
+38 http cache @types/react-dom@https://registry.npmjs.org/@types/react-dom/-/react-dom-19.2.3.tgz 0ms (cache hit)
+39 http cache @types/react@https://registry.npmjs.org/@types/react/-/react-19.2.15.tgz 0ms (cache hit)
+40 silly tarball no local data for csstype@https://registry.npmjs.org/csstype/-/csstype-3.2.3.tgz. Extracting by manifest.
+41 silly tarball no local data for @types/react-dom@https://registry.npmjs.org/@types/react-dom/-/react-dom-19.2.3.tgz. Extracting by manifest.
+42 silly tarball no local data for @types/react@https://registry.npmjs.org/@types/react/-/react-19.2.15.tgz. Extracting by manifest.
+43 http fetch GET 200 https://registry.npmjs.org/csstype/-/csstype-3.2.3.tgz 61ms (cache miss)
+44 http fetch GET 200 https://registry.npmjs.org/@types/react-dom/-/react-dom-19.2.3.tgz 93ms (cache miss)
+45 http fetch GET 200 https://registry.npmjs.org/@types/react/-/react-19.2.15.tgz 125ms (cache miss)
+46 http fetch POST 200 https://registry.npmjs.org/-/npm/v1/security/advisories/bulk 167ms
+47 silly audit report {}
+48 silly ADD node_modules/csstype
+49 silly ADD node_modules/@types/react-dom
+50 silly ADD node_modules/@types/react
+51 verbose cwd /Users/macbook/Library/Caches/typescript/6.0
+52 verbose os Darwin 24.3.0
+53 verbose node v24.14.0
+54 verbose npm  v11.9.0
+55 verbose exit 0
+56 info ok

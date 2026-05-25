@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { createClient } from "@/utils/supabase/client";
 import { GaugeChart, RadarChart, analyzeText, AnalysisResult, STAGES } from "@/components/SsumCharts";
 import { Icons } from "@/components/Icons";
@@ -17,12 +18,10 @@ const INITIAL_MESSAGES: Message[] = [
   { id: 1, sender: "other", text: "안녕하세요! 매칭됐네요", time: "오후 2:30" },
   { id: 2, sender: "me", text: "안녕하세요~ 반가워요!", time: "오후 2:31" },
   { id: 3, sender: "other", text: "프로필 보니까 카페 좋아하시네요? 저도 카페 탐방 좋아해요", time: "오후 2:32" },
-  { id: 4, sender: "me", text: "오 진짜요? 혹시 학교 근처에 추천하는 곳 있어요?", time: "오후 2:33" },
-  { id: 5, sender: "other", text: "정문 쪽에 새로 생긴 곳 괜찮더라구요! 라떼가 진짜 맛있어요 ㅎㅎ", time: "오후 2:34" },
 ];
 
 export default function ChatPage() {
-  const [messages, setMessages] = useState<Message[]>(INITIAL_MESSAGES);
+  const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [showLikeToast, setShowLikeToast] = useState(false);
   const [likeCount, setLikeCount] = useState(0);
@@ -33,7 +32,15 @@ export default function ChatPage() {
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [activeRoomId, setActiveRoomId] = useState<string | null>(null);
   const [partnerNickname, setPartnerNickname] = useState("매칭된 상대");
+  const [partnerId, setPartnerId] = useState<string | null>(null);
+  const [partnerProfile, setPartnerProfile] = useState<any | null>(null);
+  const [showProfileModal, setShowProfileModal] = useState(false);
+  const [roomCreatedAt, setRoomCreatedAt] = useState<number | null>(null);
+  const [remainingMs, setRemainingMs] = useState<number | null>(null);
+  const [hasLiked, setHasLiked] = useState(false);
+  const [partnerLiked, setPartnerLiked] = useState(false);
   const supabase = createClient();
+  const router = useRouter();
 
   // AI 썸 측정 오버레이 상태
   const [showSsum, setShowSsum] = useState(false);
@@ -65,11 +72,83 @@ export default function ChatPage() {
       // 로그인 안했거나 방 ID가 없으면 더미 모드로 작동
       if (!user || !roomId) {
         setIsDevMode(true);
+        // 데모 모드인 경우 기본 예제 대화를 화면에 보여줌
+        setMessages(INITIAL_MESSAGES);
         return;
       }
       
       setCurrentUser(user);
       setActiveRoomId(roomId);
+      // 방 정보에서 상대방 ID 가져오기
+      try {
+        const { data: roomData, error: roomErr } = await supabase
+          .from('chat_rooms')
+          .select('*')
+          .eq('id', roomId)
+          .single();
+        if (!roomErr && roomData) {
+            const otherId = roomData.user1_id === user.id ? roomData.user2_id : roomData.user1_id;
+            // check expiry: if older than 24h, ask server to delete and redirect
+            try {
+              const createdAt = roomData.created_at ? new Date(roomData.created_at).getTime() : 0;
+              if (Date.now() - createdAt > 24 * 60 * 60 * 1000) {
+                // delete via server endpoint
+                await fetch('/api/chat_rooms/delete_if_expired', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ room_id: roomId }) });
+                alert('채팅 시간이 만료되어 방이 닫혔습니다.');
+                window.location.href = '/home';
+                return;
+              }
+            } catch (e) {
+              // ignore and continue
+            }
+          setPartnerId(otherId);
+          // store created_at and remaining time
+          try {
+            if (roomData.created_at) {
+              const created = new Date(roomData.created_at).getTime();
+              setRoomCreatedAt(created);
+              const rem = Math.max(0, 24 * 60 * 60 * 1000 - (Date.now() - created));
+              setRemainingMs(rem);
+            }
+          } catch (e) {}
+          // fetch partner profile
+          try {
+            const { data: p, error: pErr } = await supabase.from('profiles').select('*').eq('id', otherId).maybeSingle();
+            if (!pErr && p) setPartnerProfile(p);
+          } catch (e) {
+            // ignore
+          }
+          // 현재 사용자가 상대에게 이미 호감 표현했는지 확인 (클라이언트 중복 방지)
+          try {
+            const { data: existing, error: exErr } = await supabase
+              .from('likes')
+              .select('id')
+              .eq('from_user_id', user.id)
+              .eq('to_user_id', otherId)
+              .limit(1)
+              .maybeSingle();
+            if (!exErr && existing) setHasLiked(true);
+          } catch (e) {
+            // 실패해도 진행
+          }
+
+          // 상대가 나에게 이미 호감 표현했는지 확인해서 UI에 노출
+          try {
+            const { data: partnerLike, error: pErr } = await supabase
+              .from('likes')
+              .select('id')
+              .eq('from_user_id', otherId)
+              .eq('to_user_id', user.id)
+              .limit(1)
+              .maybeSingle();
+            if (!pErr && partnerLike) setPartnerLiked(true);
+          } catch (e) {
+            // ignore
+          }
+        }
+      } catch (e) {
+        // ignore
+      }
       
       // 1. 기존 채팅 내역 불러오기
       const { data: pastMessages, error } = await supabase
@@ -121,6 +200,28 @@ export default function ChatPage() {
       if (channel) supabase.removeChannel(channel);
     };
   }, [supabase]);
+
+  // countdown effect for remaining time
+  useEffect(() => {
+    if (roomCreatedAt == null || !activeRoomId) return;
+    const tick = () => {
+      const rem = Math.max(0, 24 * 60 * 60 * 1000 - (Date.now() - (roomCreatedAt || 0)));
+      setRemainingMs(rem);
+      if (rem <= 0) {
+        // expired: call delete endpoint and redirect
+        (async () => {
+          try {
+            await fetch('/api/chat_rooms/delete_if_expired', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ room_id: activeRoomId }) });
+          } catch (e) {}
+          alert('채팅 시간이 만료되어 방이 닫혔습니다.');
+          window.location.href = '/home';
+        })();
+      }
+    };
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [roomCreatedAt, activeRoomId]);
 
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -175,9 +276,88 @@ export default function ChatPage() {
   };
 
   const handleLike = () => {
+    // Prevent duplicate likes client-side
+    if (hasLiked) {
+      setShowLikeToast(true);
+      setTimeout(() => setShowLikeToast(false), 1200);
+      return;
+    }
+
+    // optimistic UI update
     setLikeCount((prev) => prev + 1);
     setShowLikeToast(true);
-    setTimeout(() => setShowLikeToast(false), 2000);
+
+    // persist to DB when possible with existence check
+    (async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return;
+
+        // prefer explicit partnerId if available, otherwise try to derive from URL params
+        let toUserId = partnerId;
+        if (!toUserId) {
+          const params = new URLSearchParams(window.location.search);
+          const roomIdParam = params.get('roomId');
+          if (roomIdParam) {
+            const { data: room } = await supabase.from('chat_rooms').select('*').eq('id', roomIdParam).single();
+            if (room) {
+              toUserId = room.user1_id === user.id ? room.user2_id : room.user1_id;
+              setPartnerId(toUserId);
+            }
+          }
+        }
+
+        if (!toUserId) return;
+
+        // check existing like
+        const { data: existing, error: exErr } = await supabase
+          .from('likes')
+          .select('id')
+          .eq('from_user_id', user.id)
+          .eq('to_user_id', toUserId)
+          .limit(1)
+          .maybeSingle();
+
+        if (exErr) {
+          console.error('like existence check failed', exErr);
+        }
+
+        if (existing) {
+          // 이미 존재함
+          setLikeCount((prev) => Math.max(0, prev - 1));
+          setHasLiked(true);
+          return;
+        }
+
+        // 서버 엔드포인트로 요청하여 안전하게 삽입 및 상호 호감 감지/채팅방 생성을 위임
+        try {
+          const res = await fetch('/api/likes/create', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ from_user_id: user.id, to_user_id: toUserId, room_id: activeRoomId }),
+          });
+          const json = await res.json();
+          if (!res.ok) {
+            throw new Error(json?.error || 'like create failed');
+          }
+          if (json.mutual && json.room) {
+            // 상호 호감으로 채팅방이 생성되었거나 기존 방을 가져옴
+            setTimeout(() => {
+              window.location.href = `/chat?roomId=${json.room.id}&nickname=${partnerNickname}`;
+            }, 800);
+          }
+          setHasLiked(true);
+        } catch (err) {
+          console.error('server like create failed', err);
+          setLikeCount((prev) => Math.max(0, prev - 1));
+        }
+      } catch (err) {
+        console.error('like save error', err);
+        setLikeCount((prev) => Math.max(0, prev - 1));
+      } finally {
+        setTimeout(() => setShowLikeToast(false), 2000);
+      }
+    })();
   };
 
   const handleSsumMeasure = () => {
@@ -253,9 +433,28 @@ export default function ChatPage() {
         </div>
         <div style={{ flex: 1 }}>
           <div style={{ fontWeight: 700, fontSize: "15px" }}>{partnerNickname}</div>
-          <div style={{ fontSize: "12px", color: "var(--success)" }}>온라인</div>
+            <div style={{ fontSize: "12px", color: partnerLiked ? "var(--accent-400)" : "var(--success)", display: "flex", alignItems: "center", gap: "6px" }}>
+              {partnerLiked ? (
+                <>
+                  <Icons.HeartFilled /> 상대가 당신을 좋아합니다
+                </>
+              ) : (
+                "온라인"
+              )}
+            </div>
         </div>
-
+        {/* Profile view button */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <button onClick={() => {
+            if (partnerId) router.push(`/profile/${partnerId}`);
+            else {
+              // fallback: open modal if no id available
+              setShowProfileModal(true);
+            }
+          }} style={{ background: 'transparent', border: '1px solid rgba(255,255,255,0.04)', padding: '8px 10px', borderRadius: 10, color: 'var(--text-primary)', cursor: 'pointer' }}>
+            프로필 보기
+          </button>
+        </div>
         {/* Timer */}
         <div
           style={{
@@ -270,7 +469,13 @@ export default function ChatPage() {
             color: "var(--primary-400)",
           }}
         >
-          <Icons.Clock /> 23:42:15
+          <Icons.Clock />
+          <span>
+            {remainingMs != null
+              ? `${String(Math.floor(remainingMs / 3600000)).padStart(2, '0')}:${String(Math.floor((remainingMs % 3600000) / 60000)).padStart(2, '0')}:${String(Math.floor((remainingMs % 60000) / 1000)).padStart(2, '0')}`
+              : '24:00:00'
+            }
+          </span>
         </div>
 
         {/* More Menu */}
@@ -448,21 +653,24 @@ export default function ChatPage() {
           <button
             type="button"
             onClick={handleLike}
+            disabled={hasLiked}
+            title={hasLiked ? "이미 호감 표현함" : "호감 표현"}
             style={{
               width: "44px",
               height: "44px",
               borderRadius: "50%",
-              background: likeCount > 0 ? "rgba(236, 72, 153, 0.2)" : "var(--bg-glass)",
-              border: `1px solid ${likeCount > 0 ? "rgba(236, 72, 153, 0.3)" : "var(--border-subtle)"}`,
+              background: hasLiked ? "rgba(236, 72, 153, 0.12)" : likeCount > 0 ? "rgba(236, 72, 153, 0.2)" : "var(--bg-glass)",
+              border: `1px solid ${hasLiked ? "rgba(236,72,153,0.18)" : likeCount > 0 ? "rgba(236, 72, 153, 0.3)" : "var(--border-subtle)"}`,
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
               fontSize: "20px",
-              cursor: "pointer",
+              cursor: hasLiked ? "default" : "pointer",
               flexShrink: 0,
               transition: "all var(--transition-fast)",
               position: "relative",
-              color: likeCount > 0 ? "var(--primary-500)" : "inherit"
+              color: hasLiked || likeCount > 0 ? "var(--primary-500)" : "inherit",
+              opacity: hasLiked ? 0.9 : 1
             }}
           >
             <Icons.HeartFilled />
@@ -526,6 +734,47 @@ export default function ChatPage() {
           </button>
         </form>
       </div>
+
+      {/* Partner Profile Modal */}
+      {showProfileModal && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(15,11,26,0.85)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+          <div style={{ width: "100%", maxWidth: 740, borderRadius: 12, overflow: "hidden", background: "var(--bg-default)", boxShadow: "0 10px 40px rgba(0,0,0,0.6)" }}>
+            <div style={{ padding: 16, borderBottom: "1px solid rgba(255,255,255,0.03)", display: 'flex', alignItems: 'center', gap: 12 }}>
+              <button onClick={() => setShowProfileModal(false)} style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer' }}><Icons.ArrowLeft /></button>
+              <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>상대 프로필</h2>
+            </div>
+
+            <div style={{ padding: 20, display: 'flex', gap: 18, alignItems: 'flex-start' }}>
+              <div style={{ width: 96, height: 96, borderRadius: 20, background: 'var(--gradient-primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 36, color: 'white', flexShrink: 0 }}>
+                {partnerProfile?.nickname ? partnerProfile.nickname.charAt(0) : <Icons.User />}
+              </div>
+              <div style={{ flex: 1 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
+                  <div>
+                    <div style={{ fontSize: 18, fontWeight: 800 }}>{partnerProfile?.nickname || partnerNickname}</div>
+                    <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginTop: 6 }}>{partnerProfile?.major || partnerProfile?.department || ''} · {partnerProfile?.student_id || ''}학번 · {partnerProfile?.age ? `${partnerProfile.age}세` : ''}</div>
+                  </div>
+                </div>
+
+                <div style={{ marginTop: 12, fontSize: 14, color: 'var(--text-primary)', lineHeight: 1.6 }}>{partnerProfile?.bio || '소개글이 없습니다.'}</div>
+
+                {partnerProfile?.tags && partnerProfile.tags.length > 0 && (
+                  <div style={{ marginTop: 12, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                    {partnerProfile.tags.map((t: string) => (
+                      <span key={t} className="tag" style={{ fontSize: 12 }}>{t}</span>
+                    ))}
+                  </div>
+                )}
+
+                <div style={{ marginTop: 18, display: 'flex', gap: 8 }}>
+                  <button className="btn-primary" onClick={() => { if (partnerId) router.push(`/profile/${partnerId}`); else setShowProfileModal(false); }} style={{ flex: 1 }}>전체 프로필 보기</button>
+                  <button className="btn-secondary" onClick={() => { setShowProfileModal(false); }} style={{ flex: 1 }}>취소</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* AI Ssum Measurement Overlay */}
       {showSsum && (

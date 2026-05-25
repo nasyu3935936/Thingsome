@@ -44,10 +44,19 @@ export default function LoginPage() {
     
     setIsLoading(true);
     try {
+      // 서버에 이메일 존재 여부를 확인하여 중복 가입을 방지하고
+      // 이미 가입된 이메일이면 `shouldCreateUser: false`로 로그인 처리합니다.
+      const check = await fetch('/api/auth/check', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
+      }).then(r => r.json()).catch(() => ({ exists: false }));
+
+      const shouldCreate = !check.exists;
       const { error } = await supabase.auth.signInWithOtp({
         email,
         options: {
-          shouldCreateUser: true, // 가입되지 않은 경우 자동 가입 진행
+          shouldCreateUser: shouldCreate, // 이미 존재하면 새 사용자 생성 불가
         },
       });
 
@@ -100,7 +109,28 @@ export default function LoginPage() {
 
       if (data.session) {
         alert("이메일 인증이 완료되었습니다! 🎉");
-        window.location.href = "/onboarding";
+        try {
+          // 인증된 사용자의 프로필 존재 여부 확인
+          const supabase2 = createClient();
+          const { data: { user: verifiedUser } } = await supabase2.auth.getUser();
+          if (verifiedUser) {
+            const { data: profile, error: profErr } = await supabase2
+              .from('profiles')
+              .select('id')
+              .eq('id', verifiedUser.id)
+              .maybeSingle();
+            if (!profErr && profile) {
+              // 이미 프로필이 있으면 바로 홈으로 이동
+              window.location.href = '/home';
+              return;
+            }
+          }
+        } catch (e) {
+          // 검사 실패 시 안전하게 온보딩으로 이동
+          console.error('profile check failed', e);
+        }
+        // 프로필이 없으면 온보딩으로 이동하여 프로필 생성 유도
+        window.location.href = '/onboarding';
       } else {
         throw new Error("세션을 생성할 수 없습니다.");
       }
