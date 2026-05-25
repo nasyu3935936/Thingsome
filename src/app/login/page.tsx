@@ -34,7 +34,7 @@ export default function LoginPage() {
     }
   };
 
-  // 2. 학교 이메일 인증번호(OTP) 발송
+  // 2. 학교 이메일 인증번호(OTP) 발송 또는 매직 링크 발송
   const handleEmailSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email.endsWith("@mju.ac.kr")) {
@@ -44,19 +44,34 @@ export default function LoginPage() {
     
     setIsLoading(true);
     try {
-      // 서버에 이메일 존재 여부를 확인하여 중복 가입을 방지하고
-      // 이미 가입된 이메일이면 `shouldCreateUser: false`로 로그인 처리합니다.
+      // 서버에 이메일 존재 여부 및 인증 상태 확인
       const check = await fetch('/api/auth/check', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email }),
-      }).then(r => r.json()).catch(() => ({ exists: false }));
+      }).then(r => r.json()).catch(() => ({ exists: false, verified: false }));
 
+      // 이미 인증된 사용자는 매직 링크 방식으로 로그인
+      if (check.verified) {
+        const linkRes = await fetch('/api/auth/send-magic-link', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email }),
+        }).then(r => r.json());
+
+        if (linkRes.success) {
+          alert("✨ 매직 링크가 메일로 발송되었습니다!\n링크를 클릭하면 자동으로 로그인됩니다.");
+          setStep("verify");
+          return;
+        }
+      }
+
+      // 미인증 사용자는 기존 OTP 플로우
       const shouldCreate = !check.exists;
       const { error } = await supabase.auth.signInWithOtp({
         email,
         options: {
-          shouldCreateUser: shouldCreate, // 이미 존재하면 새 사용자 생성 불가
+          shouldCreateUser: shouldCreate,
         },
       });
 

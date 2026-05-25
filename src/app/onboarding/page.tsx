@@ -125,6 +125,7 @@ export default function OnboardingPage() {
         tags: profile.interests,
         preferred_age_min: profile.prefAgeMin,
         preferred_age_max: profile.prefAgeMax,
+        school_email_verified: true,
       });
 
       if (error) throw error;

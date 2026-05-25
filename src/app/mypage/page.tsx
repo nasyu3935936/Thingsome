@@ -95,6 +95,7 @@ export default function MyPage() {
     prefExcludeSameDept: false,
     prefAgeMin: 20,
     prefAgeMax: 28,
+    schoolEmailVerified: false,
   });
 
   const [activeModal, setActiveModal] = useState<string | null>(null);
@@ -168,6 +169,7 @@ export default function MyPage() {
               prefExcludeSameDept: localExclude,
               prefAgeMin: dbProfile.preferred_age_min || 20,
               prefAgeMax: dbProfile.preferred_age_max || 28,
+              schoolEmailVerified: dbProfile.school_email_verified || false,
             });
             return;
           }
@@ -238,6 +240,7 @@ export default function MyPage() {
         tags: editForm.interests,
         preferred_age_min: Number(editForm.prefAgeMin),
         preferred_age_max: Number(editForm.prefAgeMax),
+        school_email_verified: profile.schoolEmailVerified || false,
       };
 
       if (user) {

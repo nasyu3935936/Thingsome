@@ -42,6 +42,10 @@ export default function ChatPage() {
   const supabase = createClient();
   const router = useRouter();
 
+  // 채팅방 목록 관련 상태
+  const [chatRoomsList, setChatRoomsList] = useState<any[]>([]);
+  const [loadingRooms, setLoadingRooms] = useState(false);
+
   // AI 썸 측정 오버레이 상태
   const [showSsum, setShowSsum] = useState(false);
   const [ssumMode, setSsumMode] = useState<"analyzing" | "result">("analyzing");
@@ -69,11 +73,48 @@ export default function ChatPage() {
 
       const { data: { user } } = await supabase.auth.getUser();
       
-      // 로그인 안했거나 방 ID가 없으면 더미 모드로 작동
-      if (!user || !roomId) {
+      // 로그인 안됨
+      if (!user) {
         setIsDevMode(true);
-        // 데모 모드인 경우 기본 예제 대화를 화면에 보여줌
         setMessages(INITIAL_MESSAGES);
+        return;
+      }
+
+      setCurrentUser(user);
+
+      // roomId가 없으면 채팅방 목록 모드
+      if (!roomId) {
+        try {
+          setLoadingRooms(true);
+          const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+          const { data: rooms, error: roomsErr } = await supabase
+            .from('chat_rooms')
+            .select('*')
+            .or(`user1_id.eq.${user.id},user2_id.eq.${user.id}`)
+            .gte('created_at', cutoff)
+            .order('created_at', { ascending: false });
+
+          if (!roomsErr && rooms && rooms.length > 0) {
+            // 각 채팅방의 상대방 정보 가져오기
+            const roomsWithPartner = await Promise.all(rooms.map(async (room) => {
+              const partnerId = room.user1_id === user.id ? room.user2_id : room.user1_id;
+              try {
+                const { data: partner } = await supabase.from('profiles').select('nickname').eq('id', partnerId).maybeSingle();
+                return { ...room, partnerNickname: partner?.nickname || '사용자', partnerId };
+              } catch (e) {
+                return { ...room, partnerNickname: '사용자', partnerId };
+              }
+            }));
+            setChatRoomsList(roomsWithPartner);
+          } else {
+            setChatRoomsList([]);
+          }
+        } catch (e) {
+          console.error('fetch rooms failed', e);
+          setChatRoomsList([]);
+        } finally {
+          setLoadingRooms(false);
+        }
         return;
       }
       
@@ -222,6 +263,22 @@ export default function ChatPage() {
     const id = setInterval(tick, 1000);
     return () => clearInterval(id);
   }, [roomCreatedAt, activeRoomId]);
+
+  const handleLeaveRoom = async () => {
+    if (!activeRoomId) return;
+    if (!confirm('이 채팅방을 나가시겠습니까?')) return;
+
+    try {
+      // 채팅방 삭제
+      const { error } = await supabase.from('chat_rooms').delete().eq('id', activeRoomId);
+      if (error) throw error;
+      // 목록으로 돌아가기
+      window.location.href = '/chat';
+    } catch (e) {
+      console.error('leave room failed', e);
+      alert('채팅방 나가기에 실패했습니다.');
+    }
+  };
 
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -377,6 +434,87 @@ export default function ChatPage() {
     }, 2500); // AI 분석 애니메이션 시간
   };
 
+  // 채팅방 목록 모드
+  if (!activeRoomId && currentUser) {
+    return (
+      <main style={{ maxWidth: "500px", margin: "0 auto", padding: 0 }}>
+        <div style={{ padding: "16px", paddingTop: "max(16px, env(safe-area-inset-top))", borderBottom: "1px solid var(--border-subtle)" }}>
+          <h1 style={{ margin: 0, fontSize: 22, fontWeight: 800 }}>채팅</h1>
+        </div>
+
+        {loadingRooms ? (
+          <div style={{ padding: 24, textAlign: "center", color: "var(--text-secondary)" }}>로딩 중...</div>
+        ) : chatRoomsList.length === 0 ? (
+          <div style={{ padding: 24, textAlign: "center", color: "var(--text-secondary)" }}>활성 채팅방이 없습니다.</div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column" }}>
+            {chatRoomsList.map((room) => (
+              <button
+                key={room.id}
+                onClick={() => window.location.href = `/chat?roomId=${room.id}&nickname=${room.partnerNickname}`}
+                style={{
+                  padding: "16px",
+                  borderBottom: "1px solid var(--border-subtle)",
+                  background: "transparent",
+                  border: "none",
+                  textAlign: "left",
+                  cursor: "pointer",
+                  display: "flex",
+                  gap: 12,
+                  alignItems: "center",
+                  color: "var(--text-primary)",
+                  transition: "background 0.2s",
+                }}
+                onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(255,255,255,0.02)")}
+                onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+              >
+                <div style={{ width: 56, height: 56, borderRadius: 12, background: "var(--gradient-primary)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 24, color: "white", flexShrink: 0 }}>
+                  {room.partnerNickname.charAt(0)}
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 4 }}>{room.partnerNickname}</div>
+                  <div style={{ fontSize: 13, color: "var(--text-secondary)" }}>메시지 보내기</div>
+                </div>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (confirm('이 채팅방을 나가시겠습니까?')) {
+                      (async () => {
+                        try {
+                          await supabase.from('chat_rooms').delete().eq('id', room.id);
+                          setChatRoomsList((prev) => prev.filter((r) => r.id !== room.id));
+                        } catch (error) {
+                          console.error('delete failed', error);
+                          alert('채팅방 삭제에 실패했습니다.');
+                        }
+                      })();
+                    }
+                  }}
+                  style={{
+                    background: "rgba(239,68,68,0.08)",
+                    border: "1px solid rgba(239,68,68,0.12)",
+                    padding: "6px 12px",
+                    borderRadius: 6,
+                    color: "var(--error)",
+                    cursor: "pointer",
+                    fontSize: 12,
+                    fontWeight: 600,
+                    fontFamily: "inherit",
+                  }}
+                >
+                  나가기
+                </button>
+              </button>
+            ))}
+          </div>
+        )}
+
+        <div style={{ height: "env(safe-area-inset-bottom)" }} />
+      </main>
+    );
+  }
+
   return (
     <main
       style={{
@@ -477,6 +615,27 @@ export default function ChatPage() {
             }
           </span>
         </div>
+
+        {/* More Menu */}
+        <button
+          onClick={handleLeaveRoom}
+          style={{
+            background: "rgba(239,68,68,0.1)",
+            border: "1px solid rgba(239,68,68,0.2)",
+            padding: "8px 12px",
+            borderRadius: "var(--radius-md)",
+            color: "var(--error)",
+            cursor: "pointer",
+            fontSize: "12px",
+            fontWeight: 600,
+            fontFamily: "inherit",
+            display: "flex",
+            alignItems: "center",
+            gap: "4px"
+          }}
+        >
+          나가기
+        </button>
 
         {/* More Menu */}
         <button
