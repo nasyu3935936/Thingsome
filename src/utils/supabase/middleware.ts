@@ -33,6 +33,11 @@ export async function updateSession(request: NextRequest) {
     }
   )
 
+  // OAuth 콜백: PKCE verifier 쿠키가 필요하므로 getUser/signOut 하지 않음
+  if (request.nextUrl.pathname.startsWith('/auth/callback')) {
+    return supabaseResponse
+  }
+
   let user = null
 
   try {
