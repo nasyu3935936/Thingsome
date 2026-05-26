@@ -1,12 +1,12 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
+import { resolvePostLoginPath } from '@/lib/auth/post-login'
 
 export async function GET(request: NextRequest) {
   const { searchParams, origin } = new URL(request.url)
   const code = searchParams.get('code')
   const oauthError = searchParams.get('error')
   const oauthErrorDescription = searchParams.get('error_description')
-  const next = searchParams.get('next') ?? '/onboarding'
 
   if (oauthError) {
     console.error('[auth/callback] OAuth error:', oauthError, oauthErrorDescription)
@@ -20,8 +20,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(`${origin}/login?error=auth-failed&reason=missing_code`)
   }
 
-  const redirectUrl = getRedirectUrl(request, origin, next)
-  const response = NextResponse.redirect(redirectUrl)
+  let response = NextResponse.redirect(getRedirectUrl(request, origin, '/onboarding'))
 
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -47,6 +46,19 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(
       `${origin}/login?error=auth-failed&reason=${encodeURIComponent(error.message)}`
     )
+  }
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+
+  if (user) {
+    const nextPath = await resolvePostLoginPath(supabase, user.id, user)
+    const redirectResponse = NextResponse.redirect(getRedirectUrl(request, origin, nextPath))
+    response.cookies.getAll().forEach(({ name, value }) => {
+      redirectResponse.cookies.set(name, value)
+    })
+    response = redirectResponse
   }
 
   return response

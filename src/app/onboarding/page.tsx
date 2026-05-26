@@ -113,7 +113,15 @@ export default function OnboardingPage() {
         throw new Error("로그인 세션이 없습니다.");
       }
 
-      // DB에 프로필 정보 저장 (upsert)
+      const { error: metaError } = await supabase.auth.updateUser({
+        data: {
+          school_email_verified: false,
+          onboarding_completed: true,
+        },
+      });
+      if (metaError) console.error("metadata update failed", metaError);
+
+      // DB에 프로필 정보 저장 (upsert) — 학교 이메일 인증은 다음 단계에서
       const { error } = await supabase.from("profiles").upsert({
         id: user.id,
         nickname: profile.nickname,
@@ -125,13 +133,13 @@ export default function OnboardingPage() {
         tags: profile.interests,
         preferred_age_min: profile.prefAgeMin,
         preferred_age_max: profile.prefAgeMax,
-        school_email_verified: true,
+        school_email_verified: false,
       });
 
       if (error) throw error;
       
-      alert("프로필 설정이 완료되었습니다!");
-      window.location.href = "/home";
+      alert("프로필 설정이 완료되었습니다! 이제 학교 이메일을 인증해주세요.");
+      window.location.href = "/verify-school-email";
       
     } catch (error: any) {
       alert(`프로필 저장 실패: ${error.message}`);

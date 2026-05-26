@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { createClient } from "@/utils/supabase/client";
 import { Icons } from "@/components/Icons";
+import { resolvePostLoginPath } from "@/lib/auth/post-login";
 
 export default function LoginPage() {
   const [step, setStep] = useState<"social" | "email" | "verify" | "magic">("social");
@@ -19,7 +20,8 @@ export default function LoginPage() {
       const client = createClient();
       const { data } = await client.auth.getUser();
       if (data.user) {
-        window.location.href = "/home";
+        const nextPath = await resolvePostLoginPath(client, data.user.id, data.user);
+        window.location.href = nextPath;
       }
     };
 
@@ -33,7 +35,7 @@ export default function LoginPage() {
       const { error } = await supabase.auth.signInWithOAuth({
         provider,
         options: {
-          redirectTo: `${window.location.origin}/auth/callback?next=/onboarding`,
+          redirectTo: `${window.location.origin}/auth/callback`,
         },
       });
 
@@ -145,7 +147,10 @@ export default function LoginPage() {
           const { data: { user: verifiedUser } } = await supabase2.auth.getUser();
           if (verifiedUser) {
             const { error: metaError } = await supabase2.auth.updateUser({
-              data: { school_email_verified: true },
+              data: {
+                school_email_verified: true,
+                school_email: email,
+              },
             });
             if (metaError) {
               console.error('user metadata update failed', metaError);
@@ -153,11 +158,21 @@ export default function LoginPage() {
 
             const { data: profile, error: profErr } = await supabase2
               .from('profiles')
-              .select('id')
+              .select('id, school_email_verified')
               .eq('id', verifiedUser.id)
               .maybeSingle();
+
             if (!profErr && profile) {
-              window.location.href = '/home';
+              await supabase2
+                .from('profiles')
+                .update({
+                  school_email: email,
+                  school_email_verified: true,
+                })
+                .eq('id', verifiedUser.id);
+
+              const nextPath = await resolvePostLoginPath(supabase2, verifiedUser.id, verifiedUser);
+              window.location.href = nextPath;
               return;
             }
           }

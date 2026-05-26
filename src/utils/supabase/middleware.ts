@@ -1,5 +1,6 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
+import { getProfileGate, resolvePostLoginPath } from '@/lib/auth/post-login'
 
 function applySupabaseCookies(source: NextResponse, target: NextResponse) {
   source.cookies.getAll().forEach(({ name, value }) => {
@@ -60,19 +61,52 @@ export async function updateSession(request: NextRequest) {
     return supabaseResponse
   }
 
-  if (user && request.nextUrl.pathname.startsWith('/login')) {
+  const pathname = request.nextUrl.pathname
+
+  if (user && pathname.startsWith('/login')) {
+    const nextPath = await resolvePostLoginPath(supabase, user.id, user)
     const url = request.nextUrl.clone()
-    url.pathname = '/home'
+    url.pathname = nextPath
     const redirectResponse = NextResponse.redirect(url)
     applySupabaseCookies(supabaseResponse, redirectResponse)
     return redirectResponse
   }
 
+  if (user) {
+    const gate = await getProfileGate(supabase, user.id, user)
+    const isOnboarding = pathname.startsWith('/onboarding')
+    const isVerifySchool = pathname.startsWith('/verify-school-email')
+
+    if (!gate.hasProfile && !isOnboarding) {
+      const url = request.nextUrl.clone()
+      url.pathname = '/onboarding'
+      const redirectResponse = NextResponse.redirect(url)
+      applySupabaseCookies(supabaseResponse, redirectResponse)
+      return redirectResponse
+    }
+
+    if (gate.hasProfile && !gate.schoolEmailVerified && !isVerifySchool && !isOnboarding) {
+      const url = request.nextUrl.clone()
+      url.pathname = '/verify-school-email'
+      const redirectResponse = NextResponse.redirect(url)
+      applySupabaseCookies(supabaseResponse, redirectResponse)
+      return redirectResponse
+    }
+
+    if (gate.hasProfile && gate.schoolEmailVerified && (isOnboarding || isVerifySchool)) {
+      const url = request.nextUrl.clone()
+      url.pathname = '/home'
+      const redirectResponse = NextResponse.redirect(url)
+      applySupabaseCookies(supabaseResponse, redirectResponse)
+      return redirectResponse
+    }
+  }
+
   if (
     !user &&
-    !request.nextUrl.pathname.startsWith('/login') &&
-    !request.nextUrl.pathname.startsWith('/auth') &&
-    request.nextUrl.pathname !== '/'
+    !pathname.startsWith('/login') &&
+    !pathname.startsWith('/auth') &&
+    pathname !== '/'
   ) {
     const url = request.nextUrl.clone()
     url.pathname = '/login'
