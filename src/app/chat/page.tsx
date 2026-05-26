@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, type CSSProperties } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/utils/supabase/client";
@@ -397,6 +397,22 @@ export default function ChatPage() {
     return () => clearInterval(id);
   }, [roomCreatedAt, activeRoomId]);
 
+  const exitChatRoom = useCallback(() => {
+    router.push('/chat');
+  }, [router]);
+
+  useEffect(() => {
+    if (!activeRoomId) return;
+
+    const onPopState = () => {
+      exitChatRoom();
+    };
+
+    window.history.pushState({ chatRoom: activeRoomId }, '');
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, [activeRoomId, exitChatRoom]);
+
   const handleLeaveRoom = async () => {
     if (!activeRoomId) return;
     if (!confirm('이 채팅방을 나가시겠습니까?')) return;
@@ -406,7 +422,7 @@ export default function ChatPage() {
       const { error } = await supabase.from('chat_rooms').delete().eq('id', activeRoomId);
       if (error) throw error;
       // 목록으로 돌아가기
-      window.location.href = '/chat';
+      exitChatRoom();
     } catch (e) {
       console.error('leave room failed', e);
       alert('채팅방 나가기에 실패했습니다.');
@@ -567,17 +583,80 @@ export default function ChatPage() {
     }, 2500); // AI 분석 애니메이션 시간
   };
 
+  const backButtonStyle: CSSProperties = {
+    width: 40,
+    height: 40,
+    borderRadius: "var(--radius-md)",
+    background: "var(--bg-glass)",
+    border: "1px solid var(--border-subtle)",
+    color: "var(--text-secondary)",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    cursor: "pointer",
+    flexShrink: 0,
+    padding: 0,
+    fontFamily: "inherit",
+  };
+
+  const headerActionBtnStyle: CSSProperties = {
+    padding: "8px 12px",
+    borderRadius: "var(--radius-md)",
+    fontSize: "12px",
+    fontWeight: 600,
+    fontFamily: "inherit",
+    cursor: "pointer",
+    whiteSpace: "nowrap",
+    flexShrink: 0,
+    display: "inline-flex",
+    alignItems: "center",
+    gap: "4px",
+  };
+
+  const isBreakStatus = hasBroken || partnerBroken;
+  const partnerStatusText =
+    hasBroken && partnerBroken
+      ? "썸붕! 둘 다 하트를 깨뜨렸어요"
+      : partnerBroken
+        ? "상대가 먼저 하트를 깼어요"
+        : hasBroken
+          ? "당신이 하트를 깼습니다"
+          : partnerLiked && hasLiked
+            ? "서로 호감 확인 완료"
+            : partnerLiked
+              ? "상대가 당신을 좋아합니다"
+              : "온라인";
+
   // 채팅방 목록 모드
   if (!activeRoomId && currentUser) {
     return (
       <main style={{ maxWidth: "500px", margin: "0 auto", padding: 0 }}>
-        <div style={{ padding: "16px", paddingTop: "max(16px, env(safe-area-inset-top))", borderBottom: "1px solid var(--border-subtle)" }}>
-          <h1 style={{ margin: 0, fontSize: 22, fontWeight: 800 }}>채팅</h1>
-          {totalUnreadCount > 0 && (
-            <div style={{ marginTop: 8, color: "var(--primary-400)", fontSize: 13, fontWeight: 600 }}>
-              읽지 않은 메시지 {totalUnreadCount}개가 있습니다
-            </div>
-          )}
+        <div
+          style={{
+            padding: "16px",
+            paddingTop: "max(16px, env(safe-area-inset-top))",
+            borderBottom: "1px solid var(--border-subtle)",
+            display: "flex",
+            alignItems: "center",
+            gap: 12,
+          }}
+        >
+          <button
+            type="button"
+            aria-label="뒤로가기"
+            onClick={() => router.push("/home")}
+            style={backButtonStyle}
+          >
+            <Icons.ArrowLeft />
+          </button>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <h1 style={{ margin: 0, fontSize: 22, fontWeight: 800 }}>채팅</h1>
+            {totalUnreadCount > 0 && (
+              <div style={{ marginTop: 6, color: "var(--primary-400)", fontSize: 13, fontWeight: 600 }}>
+                읽지 않은 메시지 {totalUnreadCount}개
+              </div>
+            )}
+          </div>
         </div>
 
         {loadingRooms ? (
@@ -671,144 +750,181 @@ export default function ChatPage() {
       }}
     >
       {/* Chat Header */}
-      <div
+      <header
         style={{
           padding: "12px 16px",
           paddingTop: "max(12px, env(safe-area-inset-top))",
           background: "rgba(15, 11, 26, 0.95)",
           backdropFilter: "blur(20px)",
           borderBottom: "1px solid var(--border-subtle)",
-          display: "flex",
-          alignItems: "center",
-          gap: "12px",
           position: "sticky",
           top: 0,
           zIndex: 10,
         }}
       >
-        <Link
-          href="/home"
-          style={{
-            color: "var(--text-secondary)",
-            textDecoration: "none",
-            fontSize: "24px",
-            display: "flex",
-            alignItems: "center"
-          }}
-        >
-          <Icons.ArrowLeft />
-        </Link>
-        <div
-          style={{
-            width: "40px",
-            height: "40px",
-            borderRadius: "50%",
-            background: "var(--gradient-primary)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            fontSize: "20px",
-            flexShrink: 0,
-            color: "white"
-          }}
-        >
-          <Icons.User />
-        </div>
-        <div style={{ flex: 1 }}>
-          <div style={{ fontWeight: 700, fontSize: "15px" }}>{partnerNickname}</div>
-          <div style={{ fontSize: "12px", display: "flex", alignItems: "center", gap: "6px", color: partnerBroken ? "var(--error)" : partnerLiked ? "var(--accent-400)" : "var(--success)" }}>
-            {hasBroken && partnerBroken ? (
-              <>💔 썸붕! 둘 다 하트를 깨뜨렸어요</>
-            ) : partnerBroken ? (
-              <>💔 상대가 먼저 하트를 깼어요</>
-            ) : hasBroken ? (
-              <>💔 당신이 하트를 깼습니다</>
-            ) : partnerLiked && hasLiked ? (
-              <> <Icons.HeartFilled /> 서로 호감 확인 완료</>
-            ) : partnerLiked ? (
-              <> <Icons.HeartFilled /> 상대가 당신을 좋아합니다</>
-            ) : (
-              "온라인"
-            )}
+        <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
+          <button
+            type="button"
+            aria-label="채팅 목록으로"
+            onClick={exitChatRoom}
+            style={backButtonStyle}
+          >
+            <Icons.ArrowLeft />
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              if (partnerId) router.push(`/profile/${partnerId}`);
+              else setShowProfileModal(true);
+            }}
+            style={{
+              flex: 1,
+              minWidth: 0,
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+              background: "transparent",
+              border: "none",
+              padding: 0,
+              cursor: "pointer",
+              textAlign: "left",
+              fontFamily: "inherit",
+              color: "inherit",
+            }}
+          >
+            <div
+              style={{
+                width: 40,
+                height: 40,
+                borderRadius: "50%",
+                background: "var(--gradient-primary)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                flexShrink: 0,
+                color: "white",
+              }}
+            >
+              <Icons.User />
+            </div>
+            <div style={{ flex: 1, minWidth: 0, overflow: "hidden" }}>
+              <div
+                style={{
+                  fontWeight: 700,
+                  fontSize: "15px",
+                  lineHeight: 1.3,
+                  whiteSpace: "nowrap",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                }}
+              >
+                {partnerNickname}
+              </div>
+              <div
+                style={{
+                  fontSize: "12px",
+                  lineHeight: 1.3,
+                  marginTop: 2,
+                  whiteSpace: "nowrap",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  color: partnerBroken ? "var(--error)" : partnerLiked ? "var(--accent-400)" : "var(--success)",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 4,
+                }}
+              >
+                {isBreakStatus && (
+                  <span style={{ display: "inline-flex", flexShrink: 0, color: "var(--error)" }}>
+                    <Icons.HeartBroken />
+                  </span>
+                )}
+                {partnerLiked && hasLiked && !isBreakStatus && (
+                  <span style={{ display: "inline-flex", flexShrink: 0 }}>
+                    <Icons.HeartFilled />
+                  </span>
+                )}
+                <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{partnerStatusText}</span>
+              </div>
+            </div>
+          </button>
+
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 4,
+              background: "rgba(236, 72, 153, 0.1)",
+              padding: "6px 10px",
+              borderRadius: "var(--radius-full)",
+              fontSize: "11px",
+              fontWeight: 600,
+              color: "var(--primary-400)",
+              flexShrink: 0,
+              whiteSpace: "nowrap",
+            }}
+          >
+            <Icons.Clock />
+            <span>
+              {remainingMs != null
+                ? `${String(Math.floor(remainingMs / 3600000)).padStart(2, "0")}:${String(Math.floor((remainingMs % 3600000) / 60000)).padStart(2, "0")}:${String(Math.floor((remainingMs % 60000) / 1000)).padStart(2, "0")}`
+                : "24:00:00"}
+            </span>
           </div>
         </div>
-        {/* Profile view button */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <button onClick={() => {
-            if (partnerId) router.push(`/profile/${partnerId}`);
-            else {
-              // fallback: open modal if no id available
-              setShowProfileModal(true);
-            }
-          }} style={{ background: 'transparent', border: '1px solid rgba(255,255,255,0.04)', padding: '8px 10px', borderRadius: 10, color: 'var(--text-primary)', cursor: 'pointer' }}>
-            프로필 보기
-          </button>
-        </div>
-        {/* Timer */}
+
         <div
           style={{
             display: "flex",
             alignItems: "center",
-            gap: "6px",
-            background: "rgba(236, 72, 153, 0.1)",
-            padding: "6px 12px",
-            borderRadius: "var(--radius-full)",
-            fontSize: "12px",
-            fontWeight: 600,
-            color: "var(--primary-400)",
+            gap: 8,
+            marginTop: 10,
+            overflowX: "auto",
+            WebkitOverflowScrolling: "touch",
           }}
         >
-          <Icons.Clock />
-          <span>
-            {remainingMs != null
-              ? `${String(Math.floor(remainingMs / 3600000)).padStart(2, '0')}:${String(Math.floor((remainingMs % 3600000) / 60000)).padStart(2, '0')}:${String(Math.floor((remainingMs % 60000) / 1000)).padStart(2, '0')}`
-              : '24:00:00'
-            }
-          </span>
+          <button
+            type="button"
+            onClick={() => {
+              if (partnerId) router.push(`/profile/${partnerId}`);
+              else setShowProfileModal(true);
+            }}
+            style={{
+              ...headerActionBtnStyle,
+              background: "var(--bg-glass)",
+              border: "1px solid var(--border-subtle)",
+              color: "var(--text-primary)",
+            }}
+          >
+            프로필
+          </button>
+          <button
+            type="button"
+            onClick={handleSsumMeasure}
+            style={{
+              ...headerActionBtnStyle,
+              background: "rgba(168, 85, 247, 0.1)",
+              border: "1px solid rgba(168, 85, 247, 0.2)",
+              color: "var(--purple-400)",
+            }}
+          >
+            <Icons.Sparkles /> 썸 측정
+          </button>
+          <button
+            type="button"
+            onClick={handleLeaveRoom}
+            style={{
+              ...headerActionBtnStyle,
+              background: "rgba(239,68,68,0.1)",
+              border: "1px solid rgba(239,68,68,0.2)",
+              color: "var(--error)",
+            }}
+          >
+            나가기
+          </button>
         </div>
-
-        {/* More Menu */}
-        <button
-          onClick={handleLeaveRoom}
-          style={{
-            background: "rgba(239,68,68,0.1)",
-            border: "1px solid rgba(239,68,68,0.2)",
-            padding: "8px 12px",
-            borderRadius: "var(--radius-md)",
-            color: "var(--error)",
-            cursor: "pointer",
-            fontSize: "12px",
-            fontWeight: 600,
-            fontFamily: "inherit",
-            display: "flex",
-            alignItems: "center",
-            gap: "4px"
-          }}
-        >
-          나가기
-        </button>
-
-        {/* More Menu */}
-        <button
-          onClick={handleSsumMeasure}
-          style={{
-            background: "rgba(168, 85, 247, 0.1)",
-            border: "1px solid rgba(168, 85, 247, 0.2)",
-            padding: "8px 12px",
-            borderRadius: "var(--radius-md)",
-            color: "var(--purple-400)",
-            cursor: "pointer",
-            fontSize: "12px",
-            fontWeight: 600,
-            fontFamily: "inherit",
-            display: "flex",
-            alignItems: "center",
-            gap: "4px"
-          }}
-        >
-          <Icons.Sparkles /> 썸 측정
-        </button>
-      </div>
+      </header>
 
       {/* Messages */}
       <div
@@ -959,8 +1075,16 @@ export default function ChatPage() {
             color: "white",
           }}
         >
-          <div style={{ display: "flex", justifyContent: "center", marginBottom: "8px", fontSize: "24px" }}>
-            💔
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "center",
+              marginBottom: "8px",
+              color: "white",
+              transform: "scale(1.35)",
+            }}
+          >
+            <Icons.HeartBroken />
           </div>
           <div style={{ fontWeight: 700, fontSize: "16px" }}>
             {breakMessage}
@@ -1039,7 +1163,8 @@ export default function ChatPage() {
             type="button"
             onClick={handleBreakHeart}
             disabled={hasBroken || isBreaking}
-            title={hasBroken ? "이미 하트 깨짐 처리됨" : "하트 깨짐"}
+            title={hasBroken ? "이미 썸붕 처리됨" : "썸붕 (하트 깨짐)"}
+            aria-label={hasBroken ? "이미 썸붕 처리됨" : "썸붕 하트 깨짐"}
             style={{
               width: "44px",
               height: "44px",
@@ -1049,15 +1174,14 @@ export default function ChatPage() {
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
-              fontSize: "20px",
-              cursor: hasBroken ? "default" : "pointer",
+              cursor: hasBroken || isBreaking ? "default" : "pointer",
               flexShrink: 0,
               transition: "all var(--transition-fast)",
-              color: hasBroken ? "var(--error)" : "var(--text-primary)",
-              opacity: hasBroken ? 0.8 : 1,
+              color: hasBroken ? "var(--error)" : "var(--text-secondary)",
+              opacity: hasBroken ? 0.85 : isBreaking ? 0.6 : 1,
             }}
           >
-            💔
+            <Icons.HeartBroken />
           </button>
 
           {/* Input */}

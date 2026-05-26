@@ -1,0 +1,25 @@
+0 verbose cli /usr/local/bin/node /usr/local/bin/npm
+1 info using npm@11.9.0
+2 info using node@v24.14.0
+3 silly config load:file:/usr/local/lib/node_modules/npm/npmrc
+4 silly config load:file:/Users/macbook/Desktop/SoloProject/Thingsome/.npmrc
+5 silly config load:file:/Users/macbook/.npmrc
+6 silly config load:file:/usr/local/etc/npmrc
+7 verbose title npm run dev
+8 verbose argv "run" "dev"
+9 verbose logfile logs-max:10 dir:/Users/macbook/Desktop/SoloProject/Thingsome/.npm-cache/_logs/2026-05-26T08_26_17_700Z-
+10 verbose logfile /Users/macbook/Desktop/SoloProject/Thingsome/.npm-cache/_logs/2026-05-26T08_26_17_700Z-debug-0.log
+11 silly logfile start cleaning logs, removing 1 files
+12 silly logfile done cleaning log files
+13 http fetch GET 200 https://registry.npmjs.org/npm 186ms
+14 verbose cwd /Users/macbook/Desktop/SoloProject/Thingsome
+15 verbose os Darwin 24.3.0
+16 verbose node v24.14.0
+17 verbose npm  v11.9.0
+18 notice
+18 notice New [33mminor[39m version of npm available! [33m11.9.0[39m -> [34m11.15.0[39m
+18 notice Changelog: [34mhttps://github.com/npm/cli/releases/tag/v11.15.0[39m
+18 notice To update run: [4mnpm install -g npm@11.15.0[24m
+18 notice  { force: true, Symbol(proc-log.meta): true }
+19 verbose exit 1
+20 verbose code 1
