@@ -76,6 +76,24 @@ export async function updateSession(request: NextRequest) {
     const gate = await getProfileGate(supabase, user.id, user)
     const isOnboarding = pathname.startsWith('/onboarding')
     const isVerifySchool = pathname.startsWith('/verify-school-email')
+    const isSetupFlow = isOnboarding || isVerifySchool
+
+    // 프로필 완료 + 미인증 → 온보딩 재진입 방지, 학교메일 인증으로
+    if (gate.hasProfile && !gate.schoolEmailVerified && isOnboarding) {
+      const url = request.nextUrl.clone()
+      url.pathname = '/verify-school-email'
+      const redirectResponse = NextResponse.redirect(url)
+      applySupabaseCookies(supabaseResponse, redirectResponse)
+      return redirectResponse
+    }
+
+    if (gate.hasProfile && gate.schoolEmailVerified && isSetupFlow) {
+      const url = request.nextUrl.clone()
+      url.pathname = '/home'
+      const redirectResponse = NextResponse.redirect(url)
+      applySupabaseCookies(supabaseResponse, redirectResponse)
+      return redirectResponse
+    }
 
     if (!gate.hasProfile && !isOnboarding) {
       const url = request.nextUrl.clone()
@@ -85,17 +103,9 @@ export async function updateSession(request: NextRequest) {
       return redirectResponse
     }
 
-    if (gate.hasProfile && !gate.schoolEmailVerified && !isVerifySchool && !isOnboarding) {
+    if (gate.hasProfile && !gate.schoolEmailVerified && !isSetupFlow) {
       const url = request.nextUrl.clone()
       url.pathname = '/verify-school-email'
-      const redirectResponse = NextResponse.redirect(url)
-      applySupabaseCookies(supabaseResponse, redirectResponse)
-      return redirectResponse
-    }
-
-    if (gate.hasProfile && gate.schoolEmailVerified && (isOnboarding || isVerifySchool)) {
-      const url = request.nextUrl.clone()
-      url.pathname = '/home'
       const redirectResponse = NextResponse.redirect(url)
       applySupabaseCookies(supabaseResponse, redirectResponse)
       return redirectResponse

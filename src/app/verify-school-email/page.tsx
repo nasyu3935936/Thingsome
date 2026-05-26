@@ -1,10 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
 import { createClient } from "@/utils/supabase/client";
 import { Icons } from "@/components/Icons";
-import { isSchoolEmailVerified } from "@/lib/auth/post-login";
 
 export default function VerifySchoolEmailPage() {
   const [email, setEmail] = useState("");
@@ -15,39 +13,41 @@ export default function VerifySchoolEmailPage() {
 
   useEffect(() => {
     const init = async () => {
-      const supabase = createClient();
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
+      try {
+        const res = await fetch("/api/profile/status");
+        if (res.status === 401) {
+          window.location.href = "/login";
+          return;
+        }
 
-      if (!user) {
-        window.location.href = "/login";
-        return;
+        const data = await res.json();
+
+        if (data.schoolEmailVerified) {
+          window.location.href = "/home";
+          return;
+        }
+
+        if (!data.hasProfile) {
+          window.location.href = "/onboarding";
+          return;
+        }
+
+        if (data.profile?.school_email) {
+          setEmail(data.profile.school_email);
+        } else {
+          const supabase = createClient();
+          const {
+            data: { user },
+          } = await supabase.auth.getUser();
+          if (user?.email?.endsWith("@mju.ac.kr")) {
+            setEmail(user.email);
+          }
+        }
+      } catch {
+        alert("상태 확인에 실패했습니다. 잠시 후 다시 시도해주세요.");
+      } finally {
+        setChecking(false);
       }
-
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("id, school_email_verified, school_email")
-        .eq("id", user.id)
-        .maybeSingle();
-
-      if (!profile) {
-        window.location.href = "/onboarding";
-        return;
-      }
-
-      if (isSchoolEmailVerified(profile, user)) {
-        window.location.href = "/home";
-        return;
-      }
-
-      if (profile.school_email) {
-        setEmail(profile.school_email);
-      } else if (user.email?.endsWith("@mju.ac.kr")) {
-        setEmail(user.email);
-      }
-
-      setChecking(false);
     };
 
     init();
@@ -70,7 +70,6 @@ export default function VerifySchoolEmailPage() {
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || "인증번호 발송 실패");
 
-      alert("인증번호가 메일로 발송되었습니다. (스팸함도 확인해주세요)");
       setStep("verify");
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "오류가 발생했습니다.";
@@ -98,7 +97,6 @@ export default function VerifySchoolEmailPage() {
         throw new Error(json.error || "인증 실패");
       }
 
-      alert("학교 이메일 인증이 완료되었습니다!");
       window.location.href = json.redirect || "/home";
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "오류가 발생했습니다.";
@@ -136,18 +134,19 @@ export default function VerifySchoolEmailPage() {
       }}
     >
       <div style={{ maxWidth: "400px", width: "100%" }}>
-        <Link
-          href="/onboarding"
+        <div
           style={{
-            display: "inline-flex",
-            color: "var(--text-muted)",
-            textDecoration: "none",
-            fontSize: "14px",
-            marginBottom: "24px",
+            display: "inline-block",
+            fontSize: "12px",
+            color: "var(--primary-400)",
+            background: "rgba(168,85,247,0.12)",
+            padding: "6px 12px",
+            borderRadius: "999px",
+            marginBottom: "16px",
           }}
         >
-          ← 프로필 설정으로
-        </Link>
+          2단계 / 학교 이메일 인증
+        </div>
 
         <div style={{ textAlign: "center", marginBottom: "32px" }}>
           <div
@@ -165,8 +164,8 @@ export default function VerifySchoolEmailPage() {
           </h1>
           <p style={{ color: "var(--text-secondary)", fontSize: "14px" }}>
             {step === "email"
-              ? "명지대 재학생 확인을 위해 학교 이메일을 인증해주세요. 최초 1회만 필요합니다."
-              : "메일로 받은 인증번호를 입력해주세요."}
+              ? "프로필 설정이 완료되었습니다. 명지대 재학생 확인을 위해 학교 이메일을 인증해주세요. (최초 1회)"
+              : "메일로 받은 인증번호 6자리를 입력해주세요."}
           </p>
         </div>
 
@@ -235,7 +234,7 @@ export default function VerifySchoolEmailPage() {
                   opacity: isLoading || code.length < 6 ? 0.6 : 1,
                 }}
               >
-                {isLoading ? "확인 중..." : "인증 완료"}
+                {isLoading ? "확인 중..." : "인증 완료하고 시작하기"}
               </button>
               <button
                 type="button"

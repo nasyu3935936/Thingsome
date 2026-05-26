@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { createClient } from "@/utils/supabase/client";
 import { Icons } from "@/components/Icons";
@@ -47,6 +47,7 @@ const INTEREST_OPTIONS = [
 ];
 
 export default function OnboardingPage() {
+  const [checking, setChecking] = useState(true);
   const [step, setStep] = useState(1);
   const [profile, setProfile] = useState({
     nickname: "",
@@ -61,6 +62,32 @@ export default function OnboardingPage() {
     prefAgeMin: 20,
     prefAgeMax: 28,
   });
+
+  useEffect(() => {
+    const checkStatus = async () => {
+      try {
+        const res = await fetch("/api/profile/status");
+        if (res.status === 401) {
+          window.location.href = "/login";
+          return;
+        }
+        const data = await res.json();
+        if (data.schoolEmailVerified) {
+          window.location.href = "/home";
+          return;
+        }
+        if (data.hasProfile && !data.schoolEmailVerified) {
+          window.location.href = "/verify-school-email";
+          return;
+        }
+      } catch {
+        // 상태 확인 실패 시 온보딩 진행 허용
+      } finally {
+        setChecking(false);
+      }
+    };
+    checkStatus();
+  }, []);
 
   const toggleInterest = (tag: string) => {
     setProfile((prev) => {
@@ -113,38 +140,47 @@ export default function OnboardingPage() {
         throw new Error("로그인 세션이 없습니다.");
       }
 
-      const { error: metaError } = await supabase.auth.updateUser({
-        data: {
-          school_email_verified: false,
-          onboarding_completed: true,
-        },
-      });
-      if (metaError) console.error("metadata update failed", metaError);
-
-      // DB에 프로필 정보 저장 (upsert) — 학교 이메일 인증은 다음 단계에서
-      const { error } = await supabase.from("profiles").upsert({
-        id: user.id,
-        nickname: profile.nickname,
-        major: profile.major || profile.department,
-        student_id: profile.admissionYear,
-        gender: profile.gender,
-        age: parseInt(profile.age),
-        bio: profile.bio,
-        tags: profile.interests,
-        preferred_age_min: profile.prefAgeMin,
-        preferred_age_max: profile.prefAgeMax,
-        school_email_verified: false,
+      const res = await fetch("/api/profile/upsert", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          nickname: profile.nickname,
+          major: profile.major || profile.department,
+          student_id: profile.admissionYear,
+          gender: profile.gender,
+          age: parseInt(profile.age, 10),
+          bio: profile.bio,
+          tags: profile.interests,
+          preferred_age_min: profile.prefAgeMin,
+          preferred_age_max: profile.prefAgeMax,
+        }),
       });
 
-      if (error) throw error;
-      
-      alert("프로필 설정이 완료되었습니다! 이제 학교 이메일을 인증해주세요.");
-      window.location.href = "/verify-school-email";
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "프로필 저장 실패");
+
+      window.location.href = json.redirect || "/verify-school-email";
       
     } catch (error: any) {
       alert(`프로필 저장 실패: ${error.message}`);
     }
   };
+
+  if (checking) {
+    return (
+      <main
+        style={{
+          minHeight: "100vh",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          color: "var(--text-muted)",
+        }}
+      >
+        확인 중...
+      </main>
+    );
+  }
 
   return (
     <main

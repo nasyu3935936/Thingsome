@@ -14,6 +14,11 @@ export function isSchoolEmailVerified(
   return meta?.school_email_verified === true
 }
 
+function hasOnboardingCompleted(user?: User | null): boolean {
+  const meta = user?.user_metadata as Record<string, unknown> | undefined
+  return meta?.onboarding_completed === true
+}
+
 export async function getProfileGate(
   supabase: SupabaseClient,
   userId: string,
@@ -21,12 +26,14 @@ export async function getProfileGate(
 ): Promise<ProfileGate> {
   const { data: profile } = await supabase
     .from('profiles')
-    .select('id, school_email_verified')
+    .select('id, school_email_verified, nickname')
     .eq('id', userId)
     .maybeSingle()
 
+  const hasProfile = !!profile || hasOnboardingCompleted(user)
+
   return {
-    hasProfile: !!profile,
+    hasProfile,
     schoolEmailVerified: isSchoolEmailVerified(profile, user),
   }
 }
