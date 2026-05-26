@@ -1,6 +1,12 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
+function applySupabaseCookies(source: NextResponse, target: NextResponse) {
+  source.cookies.getAll().forEach(({ name, value }) => {
+    target.cookies.set(name, value)
+  })
+}
+
 export async function updateSession(request: NextRequest) {
   let supabaseResponse = NextResponse.next({
     request,
@@ -15,7 +21,7 @@ export async function updateSession(request: NextRequest) {
           return request.cookies.getAll()
         },
         setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value, options }) => request.cookies.set(name, value))
+          cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value))
           supabaseResponse = NextResponse.next({
             request,
           })
@@ -27,14 +33,26 @@ export async function updateSession(request: NextRequest) {
     }
   )
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+  let user = null
 
-  // 🛠 [개발 모드 우회] 원활한 프론트엔드 UI 개발과 테스트를 위해 
+  try {
+    const { data, error } = await supabase.auth.getUser()
+    user = data.user
+
+    if (error) {
+      // Stale or revoked refresh token — clear cookies so the client can re-login cleanly
+      await supabase.auth.signOut()
+      user = null
+    }
+  } catch {
+    await supabase.auth.signOut().catch(() => {})
+    user = null
+  }
+
+  // 🛠 [개발 모드 우회] 원활한 프론트엔드 UI 개발과 테스트를 위해
   // 로컬 환경(localhost)에서는 미들웨어의 접속 차단을 일시 해제합니다.
   if (process.env.NODE_ENV === 'development') {
-    return supabaseResponse;
+    return supabaseResponse
   }
 
   if (
@@ -43,10 +61,11 @@ export async function updateSession(request: NextRequest) {
     !request.nextUrl.pathname.startsWith('/auth') &&
     request.nextUrl.pathname !== '/'
   ) {
-    // no user, potentially respond by redirecting the user to the login page
     const url = request.nextUrl.clone()
     url.pathname = '/login'
-    return NextResponse.redirect(url)
+    const redirectResponse = NextResponse.redirect(url)
+    applySupabaseCookies(supabaseResponse, redirectResponse)
+    return redirectResponse
   }
 
   return supabaseResponse
