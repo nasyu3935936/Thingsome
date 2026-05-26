@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { createClient } from "@/utils/supabase/client";
 import { Icons } from "@/components/Icons";
@@ -13,6 +13,18 @@ export default function LoginPage() {
   const [magicSent, setMagicSent] = useState(false);
   
   const supabase = createClient();
+
+  useEffect(() => {
+    const checkLoggedIn = async () => {
+      const client = createClient();
+      const { data } = await client.auth.getUser();
+      if (data.user) {
+        window.location.href = "/home";
+      }
+    };
+
+    checkLoggedIn();
+  }, []);
 
   // 1. 소셜 로그인 연동 (카카오, 구글)
   const handleSocialLogin = async (provider: "kakao" | "google") => {

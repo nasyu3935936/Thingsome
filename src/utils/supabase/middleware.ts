@@ -55,6 +55,14 @@ export async function updateSession(request: NextRequest) {
     return supabaseResponse
   }
 
+  if (user && request.nextUrl.pathname.startsWith('/login')) {
+    const url = request.nextUrl.clone()
+    url.pathname = '/home'
+    const redirectResponse = NextResponse.redirect(url)
+    applySupabaseCookies(supabaseResponse, redirectResponse)
+    return redirectResponse
+  }
+
   if (
     !user &&
     !request.nextUrl.pathname.startsWith('/login') &&
