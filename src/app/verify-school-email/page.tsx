@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { createClient } from "@/utils/supabase/client";
 import { Icons } from "@/components/Icons";
+import { parseJsonResponse } from "@/lib/api/parse-json-response";
 
 export default function VerifySchoolEmailPage() {
   const [email, setEmail] = useState("");
@@ -20,7 +21,11 @@ export default function VerifySchoolEmailPage() {
           return;
         }
 
-        const data = await res.json();
+        const data = await parseJsonResponse<{
+          schoolEmailVerified?: boolean;
+          hasProfile?: boolean;
+          profile?: { school_email?: string };
+        }>(res);
 
         if (data.schoolEmailVerified) {
           window.location.href = "/home";
@@ -67,9 +72,10 @@ export default function VerifySchoolEmailPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email }),
       });
-      const json = await res.json();
+      const json = await parseJsonResponse<{ error?: string; success?: boolean; message?: string }>(res);
       if (!res.ok) throw new Error(json.error || "인증번호 발송 실패");
 
+      alert(json.message || "인증번호가 메일로 발송되었습니다. (스팸함도 확인해주세요)");
       setStep("verify");
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "오류가 발생했습니다.";
@@ -88,7 +94,7 @@ export default function VerifySchoolEmailPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, code }),
       });
-      const json = await res.json();
+      const json = await parseJsonResponse<{ error?: string; redirect?: string; success?: boolean }>(res);
       if (!res.ok) {
         if (json.redirect) {
           window.location.href = json.redirect;
@@ -97,6 +103,7 @@ export default function VerifySchoolEmailPage() {
         throw new Error(json.error || "인증 실패");
       }
 
+      alert("학교 이메일 인증이 완료되었습니다!");
       window.location.href = json.redirect || "/home";
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "오류가 발생했습니다.";

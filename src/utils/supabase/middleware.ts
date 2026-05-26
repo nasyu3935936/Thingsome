@@ -63,6 +63,11 @@ export async function updateSession(request: NextRequest) {
 
   const pathname = request.nextUrl.pathname
 
+  // API 라우트는 JSON 응답만 반환 — 리다이렉트하면 fetch().json() 이 깨짐
+  if (pathname.startsWith('/api/')) {
+    return supabaseResponse
+  }
+
   if (user && pathname.startsWith('/login')) {
     const nextPath = await resolvePostLoginPath(supabase, user.id, user)
     const url = request.nextUrl.clone()

@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { createClient } from "@/utils/supabase/client";
 import { Icons } from "@/components/Icons";
+import { parseJsonResponse } from "@/lib/api/parse-json-response";
 
 const DEPARTMENTS = [
   "인문대학",
@@ -71,7 +72,10 @@ export default function OnboardingPage() {
           window.location.href = "/login";
           return;
         }
-        const data = await res.json();
+        const data = await parseJsonResponse<{
+          schoolEmailVerified?: boolean;
+          hasProfile?: boolean;
+        }>(res);
         if (data.schoolEmailVerified) {
           window.location.href = "/home";
           return;
@@ -156,7 +160,7 @@ export default function OnboardingPage() {
         }),
       });
 
-      const json = await res.json();
+      const json = await parseJsonResponse<{ error?: string; redirect?: string }>(res);
       if (!res.ok) throw new Error(json.error || "프로필 저장 실패");
 
       window.location.href = json.redirect || "/verify-school-email";

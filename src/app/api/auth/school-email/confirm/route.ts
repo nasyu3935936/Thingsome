@@ -7,14 +7,20 @@ async function verifyOtpWithFallback(
   email: string,
   token: string
 ) {
-  let result = await admin.auth.verifyOtp({ email, token, type: 'email' })
-  if (result.error?.message?.includes('expired') || result.error?.message?.includes('invalid')) {
-    result = await admin.auth.verifyOtp({ email, token, type: 'signup' })
+  const types = ['email', 'signup', 'magiclink'] as const
+  let lastError: { message: string } | null = null
+
+  for (const type of types) {
+    const result = await admin.auth.verifyOtp({ email, token, type })
+    if (!result.error) return result
+    lastError = result.error
+    const msg = result.error.message.toLowerCase()
+    if (!msg.includes('expired') && !msg.includes('invalid') && !msg.includes('token')) {
+      break
+    }
   }
-  if (result.error?.message?.includes('expired') || result.error?.message?.includes('invalid')) {
-    result = await admin.auth.verifyOtp({ email, token, type: 'magiclink' })
-  }
-  return result
+
+  return { data: { user: null, session: null }, error: lastError }
 }
 
 export async function POST(req: Request) {
@@ -28,36 +34,34 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: '로그인이 필요합니다.' }, { status: 401 })
     }
 
-    const { email, code } = await req.json()
-    if (!email || !String(email).endsWith('@mju.ac.kr')) {
+    let body: { email?: string; code?: string }
+    try {
+      body = await req.json()
+    } catch {
+      return NextResponse.json({ error: '요청 본문이 올바르지 않습니다.' }, { status: 400 })
+    }
+
+    const email = body.email?.trim().toLowerCase()
+    const code = body.code?.trim()
+
+    if (!email || !email.endsWith('@mju.ac.kr')) {
       return NextResponse.json({ error: '유효한 학교 이메일이 필요합니다.' }, { status: 400 })
     }
-    if (!code || String(code).length < 6) {
-      return NextResponse.json({ error: '인증번호를 입력해주세요.' }, { status: 400 })
+    if (!code || code.length < 6) {
+      return NextResponse.json({ error: '인증번호 6자리 이상을 입력해주세요.' }, { status: 400 })
     }
 
-    const admin = createAdminClient()
-
-    const { data: duplicate } = await admin
-      .from('profiles')
-      .select('id')
-      .eq('school_email', email)
-      .eq('school_email_verified', true)
-      .neq('id', user.id)
-      .maybeSingle()
-
-    if (duplicate) {
+    let admin
+    try {
+      admin = createAdminClient()
+    } catch {
       return NextResponse.json(
-        { error: '이미 다른 계정에서 인증된 학교 이메일입니다.' },
-        { status: 409 }
+        { error: '서버 설정(SUPABASE_SERVICE_ROLE_KEY)이 없습니다.' },
+        { status: 500 }
       )
     }
 
-    const { data: otpData, error: otpError } = await verifyOtpWithFallback(
-      admin,
-      email,
-      String(code)
-    )
+    const { data: otpData, error: otpError } = await verifyOtpWithFallback(admin, email, code)
 
     if (otpError) {
       return NextResponse.json({ error: otpError.message }, { status: 400 })
@@ -76,16 +80,28 @@ export async function POST(req: Request) {
       )
     }
 
+    const profileUpdate: Record<string, unknown> = {
+      school_email_verified: true,
+    }
+    profileUpdate.school_email = email
+
     const { error: profileError } = await admin
       .from('profiles')
-      .update({
-        school_email: email,
-        school_email_verified: true,
-      })
+      .update(profileUpdate)
       .eq('id', user.id)
 
     if (profileError) {
-      return NextResponse.json({ error: profileError.message }, { status: 500 })
+      if (profileError.message.includes('school_email')) {
+        const { error: fallbackError } = await admin
+          .from('profiles')
+          .update({ school_email_verified: true })
+          .eq('id', user.id)
+        if (fallbackError) {
+          return NextResponse.json({ error: fallbackError.message }, { status: 500 })
+        }
+      } else {
+        return NextResponse.json({ error: profileError.message }, { status: 500 })
+      }
     }
 
     const { error: metaError } = await admin.auth.admin.updateUserById(user.id, {
@@ -100,14 +116,14 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: metaError.message }, { status: 500 })
     }
 
-    // OTP 검증용으로 잠깐 생성된 이메일 전용 auth 유저 정리 (구글 계정과 다른 경우)
-    if (otpData.user && otpData.user.id !== user.id) {
+    if (otpData?.user && otpData.user.id !== user.id) {
       await admin.auth.admin.deleteUser(otpData.user.id).catch(() => {})
     }
 
     return NextResponse.json({ success: true, redirect: '/home' })
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Unknown error'
+    console.error('[school-email/confirm]', message)
     return NextResponse.json({ error: message }, { status: 500 })
   }
 }
